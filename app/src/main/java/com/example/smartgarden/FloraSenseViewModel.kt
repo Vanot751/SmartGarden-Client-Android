@@ -2,12 +2,12 @@ package com.example.smartgarden
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import androidx.lifecycle.viewModelScope
+import com.example.smartgarden.network.LoginRequest
+import com.example.smartgarden.network.RetrofitClient
+import com.example.smartgarden.network.TokenManager
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,10 +28,10 @@ enum class PlantCategory(
 }
 
 /**
- * Estado global inmutable de FloraSense sincronizado con Firebase Auth y Firebase Realtime Database.
+ * Estado global inmutable de FloraSense.
  */
 data class FloraSenseUiState(
-    // Estado de Autenticación (Firebase Auth + ISO/IEC 27400 IoT Security)
+    // Estado de Autenticación
     val isAuthenticated: Boolean = false,
     val isAuthenticating: Boolean = false,
     val userEmail: String = "",
@@ -39,11 +39,10 @@ data class FloraSenseUiState(
     val isDarkMode: Boolean = false,
     val isoSecurityProtocol: String = "ISO/IEC 27400 • TLS 1.3 • AES-256-GCM",
 
-    // Sincronización Multi-Dispositivo (Firebase Realtime Database)
-    val firebaseNodePath: String = "/florasense/gardens/nodo_central_01",
+    // Sincronización Multi-Dispositivo
     val connectedDevicesCount: Int = 2,
     val isRealtimeConnected: Boolean = false,
-    val lastSyncSource: String = "Firebase Realtime Database",
+    val lastSyncSource: String = "Django API",
     val syncLatencyMs: Int = 22,
 
     // Filtro de categoría de planta activo en el Dashboard
@@ -59,7 +58,7 @@ data class FloraSenseUiState(
     val isNebulizerOn: Boolean = false,
     val selectedDoseMl: Int = 100, // Opciones: 50, 100, 250
     val isEmergencyStopActive: Boolean = false,
-    val statusLogMessage: String = "RTDB: Conectando...",
+    val statusLogMessage: String = "Conectando...",
 ) {
     // Reglas de negocio deterministas del prototipo IoT
     val isCriticalHeat: Boolean
@@ -77,129 +76,75 @@ class FloraSenseViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(FloraSenseUiState())
     val uiState: StateFlow<FloraSenseUiState> = _uiState.asStateFlow()
 
-    // Instancias reales del SDK de Firebase
-    private val firebaseAuth: FirebaseAuth = FirebaseAuth.getInstance()
-    private val databaseRef: DatabaseReference =
-        FirebaseDatabase.getInstance().getReference("/florasense/gardens/nodo_central_01")
-
-    // Listener permanente en tiempo real para sincronización multi-dispositivo
-    private val realtimeValueListener = object : ValueEventListener {
-        override fun onDataChange(snapshot: DataSnapshot) {
-            if (!snapshot.exists()) {
-                // Si el nodo aún no existe en la nube, inicializa la estructura base en Firebase RTDB
-                seedInitialGardenNodeIfEmpty()
-                return
-            }
-
-            _uiState.update { current ->
-                // Lectura de sensores (soporta subnodo "sensores/*" o claves directas)
-                val tempValue = snapshot.child("sensores/temperatura").getValue(Double::class.java)
-                    ?: snapshot.child("temperatureCelsius").getValue(Double::class.java)
-                    ?: current.temperatureCelsius.toDouble()
-
-                val moistureValue = snapshot.child("sensores/humedadSuelo").getValue(Int::class.java)
-                    ?: snapshot.child("soilMoisturePercent").getValue(Int::class.java)
-                    ?: current.soilMoisturePercent
-
-                val sunlightValue = snapshot.child("sensores/luzSolar").getValue(Int::class.java)
-                    ?: snapshot.child("sunlightPercent").getValue(Int::class.java)
-                    ?: current.sunlightPercent
-
-                // Lectura de actuadores (soporta subnodo "actuadores/*" o claves directas)
-                val waterPumpState = snapshot.child("actuadores/bombaAgua").getValue(Boolean::class.java)
-                    ?: snapshot.child("isWaterPumpOn").getValue(Boolean::class.java)
-                    ?: current.isWaterPumpOn
-
-                val nebulizerState = snapshot.child("actuadores/nebulizador").getValue(Boolean::class.java)
-                    ?: snapshot.child("isNebulizerOn").getValue(Boolean::class.java)
-                    ?: current.isNebulizerOn
-
-                val emergencyStopState = snapshot.child("actuadores/paradaEmergencia").getValue(Boolean::class.java)
-                    ?: snapshot.child("isEmergencyStopActive").getValue(Boolean::class.java)
-                    ?: current.isEmergencyStopActive
-
-                val doseMlValue = snapshot.child("actuadores/dosisRiegoMl").getValue(Int::class.java)
-                    ?: snapshot.child("selectedDoseMl").getValue(Int::class.java)
-                    ?: current.selectedDoseMl
-
-                val statusText = when {
-                    emergencyStopState -> "RTDB: Parada de Emergencia"
-                    tempValue > 35.0 -> String.format(java.util.Locale.US, "RTDB: Alerta Térmica (%.1f°C)", tempValue.toFloat())
-                    moistureValue < 30 -> "RTDB: Humedad Crítica ($moistureValue%)"
-                    else -> "RTDB: Conectado en Tiempo Real"
-                }
-
-                current.copy(
-                    isRealtimeConnected = true,
-                    temperatureCelsius = tempValue.toFloat(),
-                    soilMoisturePercent = moistureValue.coerceIn(0, 100),
-                    sunlightPercent = sunlightValue.coerceIn(0, 100),
-                    isWaterPumpOn = if (emergencyStopState) false else waterPumpState,
-                    isNebulizerOn = if (emergencyStopState) false else nebulizerState,
-                    selectedDoseMl = doseMlValue,
-                    isEmergencyStopActive = emergencyStopState,
-                    lastSyncSource = "Firebase RTDB (/florasense/gardens/nodo_central_01)",
-                    statusLogMessage = statusText,
-                )
-            }
-        }
-
-        override fun onCancelled(error: DatabaseError) {
-            _uiState.update { current ->
-                current.copy(
-                    isRealtimeConnected = false,
-                    statusLogMessage = "Error de sincronización RTDB: ${error.message}",
-                )
-            }
-        }
-    }
-
     init {
-        // Verifica si ya existe una sesión activa en Firebase Auth
-        val currentUser = firebaseAuth.currentUser
-        if (currentUser != null) {
+        // Verifica si ya existe una sesión guardada con Django
+        val savedToken = TokenManager.getToken()
+        if (!savedToken.isNullOrEmpty()) {
             _uiState.update {
                 it.copy(
                     isAuthenticated = true,
-                    userEmail = currentUser.email.orEmpty(),
+                    userEmail = "Usuario Autenticado",
                 )
             }
         }
 
-        // Suscripción permanente en tiempo real al nodo de Firebase Realtime Database
-        databaseRef.addValueEventListener(realtimeValueListener)
-    }
-
-    private fun seedInitialGardenNodeIfEmpty() {
-        val current = _uiState.value
-        val initialPayload = mapOf(
-            "sensores" to mapOf(
-                "temperatura" to current.temperatureCelsius,
-                "humedadSuelo" to current.soilMoisturePercent,
-                "luzSolar" to current.sunlightPercent,
-            ),
-            "actuadores" to mapOf(
-                "bombaAgua" to current.isWaterPumpOn,
-                "nebulizador" to current.isNebulizerOn,
-                "dosisRiegoMl" to current.selectedDoseMl,
-                "paradaEmergencia" to current.isEmergencyStopActive,
-            ),
-        )
-        databaseRef.setValue(initialPayload)
+        // Mecanismo de Polling (Sondeo automático) para simular tiempo real
+        viewModelScope.launch {
+            while (true) {
+                if (_uiState.value.isAuthenticated) {
+                    fetchTelemetryFromDjango()
+                }
+                delay(5000L) // Espera 5 segundos antes de la siguiente iteración
+            }
+        }
     }
 
     // ========================================================================
-    // PASO 2: AUTENTICACIÓN REAL CON FIREBASE AUTHENTICATION
+    // TELEMETRÍA (LECTURA DESDE DJANGO)
     // ========================================================================
-    fun loginWithFirebase(
-        email: String,
+    fun fetchTelemetryFromDjango() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.api.getTelemetry()
+
+                // Mapea la respuesta según la estructura de tu JSON
+                // Por ejemplo, si tienes data asumiendo que contiene temperature y moisture:
+                // (Modificar según la estructura final de TelemetryResponse)
+
+                _uiState.update { current ->
+                    current.copy(
+                        isRealtimeConnected = true,
+                        // Aquí asumimos valores por defecto hasta ajustar el data class real en base al JSON de Django
+                        // temperatureCelsius = response.data.temperature ?: current.temperatureCelsius,
+                        // soilMoisturePercent = response.data.moisture ?: current.soilMoisturePercent,
+                        statusLogMessage = "Telemetría actualizada desde Django",
+                        lastSyncSource = "Django REST API"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isRealtimeConnected = false,
+                        statusLogMessage = "Error de sincronización con Django: ${e.localizedMessage}"
+                    )
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // PASO 2: AUTENTICACIÓN REAL CON API REST EN DJANGO
+    // ========================================================================
+    fun loginWithDjango(
+        username: String,
         password: String,
         onLoginSuccess: () -> Unit,
+        onError: (String) -> Unit
     ) {
-        val cleanEmail = email.trim()
-        if (cleanEmail.isEmpty() || !cleanEmail.contains("@")) {
+        val cleanUsername = username.trim()
+        if (cleanUsername.isEmpty()) {
             _uiState.update {
-                it.copy(authError = "Ingresa un correo electrónico válido.")
+                it.copy(authError = "Ingresa un usuario o correo electrónico válido.")
             }
             return
         }
@@ -214,94 +159,50 @@ class FloraSenseViewModel : ViewModel() {
             it.copy(isAuthenticating = true, authError = null)
         }
 
-        firebaseAuth.signInWithEmailAndPassword(cleanEmail, password)
-            .addOnSuccessListener { authResult ->
-                val authenticatedEmail = authResult.user?.email ?: cleanEmail
-                _uiState.update {
-                    it.copy(
-                        isAuthenticated = true,
-                        isAuthenticating = false,
-                        userEmail = authenticatedEmail,
-                        authError = null,
-                        statusLogMessage = "Sesión Firebase Auth activa ($authenticatedEmail)",
-                    )
+        viewModelScope.launch {
+            try {
+                // Hacemos el llamado a Retrofit
+                val request = LoginRequest(username = cleanUsername, password = password)
+                val response = RetrofitClient.api.login(request)
+                
+                // Extraer el token dependiendo de si Django usa "token" o "access" (Simple JWT)
+                val actualToken = response.token ?: response.access
+                
+                if (actualToken != null) {
+                    // Guardamos el token de forma segura
+                    TokenManager.saveToken(actualToken)
+                    
+                    _uiState.update {
+                        it.copy(
+                            isAuthenticated = true,
+                            isAuthenticating = false,
+                            userEmail = cleanUsername,
+                            authError = null,
+                            statusLogMessage = "Sesión Django activa ($cleanUsername)",
+                        )
+                    }
+                    onLoginSuccess()
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isAuthenticating = false,
+                            authError = "El servidor no devolvió un token de acceso válido."
+                        )
+                    }
                 }
-                onLoginSuccess()
-            }
-            .addOnFailureListener { exception ->
-                _uiState.update {
-                    it.copy(
-                        isAuthenticated = false,
-                        isAuthenticating = false,
-                        authError = exception.localizedMessage
-                            ?: "Error al iniciar sesión en Firebase Authentication",
-                    )
-                }
-            }
-    }
-
-    fun registerWithFirebase(
-        email: String,
-        confirmEmail: String,
-        password: String,
-        confirmPassword: String,
-        onRegisterSuccess: () -> Unit,
-    ) {
-        val cleanEmail = email.trim()
-        val cleanConfirmEmail = confirmEmail.trim()
-        if (cleanEmail.isEmpty() || !cleanEmail.contains("@")) {
-            _uiState.update {
-                it.copy(authError = "Ingresa un correo electrónico válido.")
-            }
-            return
-        }
-        if (cleanEmail != cleanConfirmEmail) {
-            _uiState.update {
-                it.copy(authError = "Los correos electrónicos no coinciden.")
-            }
-            return
-        }
-        if (password.length < 6) {
-            _uiState.update {
-                it.copy(authError = "Política ISO 27400: La contraseña requiere mínimo 6 caracteres.")
-            }
-            return
-        }
-        if (password != confirmPassword) {
-            _uiState.update {
-                it.copy(authError = "Las contraseñas no coinciden.")
-            }
-            return
-        }
-
-        _uiState.update {
-            it.copy(isAuthenticating = true, authError = null)
-        }
-
-        firebaseAuth.createUserWithEmailAndPassword(cleanEmail, password)
-            .addOnSuccessListener { authResult ->
-                val authenticatedEmail = authResult.user?.email ?: cleanEmail
-                _uiState.update {
-                    it.copy(
-                        isAuthenticated = true,
-                        isAuthenticating = false,
-                        userEmail = authenticatedEmail,
-                        authError = null,
-                        statusLogMessage = "Cuenta registrada y sesión activa ($authenticatedEmail)",
-                    )
-                }
-                onRegisterSuccess()
-            }
-            .addOnFailureListener { exception ->
+            } catch (e: Exception) {
+                // Manejo de errores de red o credenciales
+                val errorMessage = "Error en el servidor: ${e.localizedMessage}"
                 _uiState.update {
                     it.copy(
                         isAuthenticated = false,
                         isAuthenticating = false,
-                        authError = exception.localizedMessage
-                            ?: "Error al registrar cuenta en Firebase Authentication",
+                        authError = errorMessage
                     )
                 }
+                onError(errorMessage)
             }
+        }
     }
 
     fun clearAuthError() {
@@ -309,83 +210,43 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     fun logout(onLoggedOut: () -> Unit) {
-        firebaseAuth.signOut()
+        TokenManager.clearToken()
         _uiState.update {
             it.copy(
                 isAuthenticated = false,
                 userEmail = "",
                 authError = null,
-                statusLogMessage = "Sesión cerrada en Firebase Authentication",
+                statusLogMessage = "Sesión cerrada",
             )
         }
         onLoggedOut()
     }
 
     // ========================================================================
-    // PASO 4: CONTROL DE ACTUADORES (ESCRITURA EN FIREBASE REALTIME DATABASE)
+    // CONTROL DE ACTUADORES (ESCRITURA) - PENDIENTE DE CONECTAR A DJANGO
     // ========================================================================
     fun setWaterPumpState(enabled: Boolean) {
         if (_uiState.value.isEmergencyStopActive) return
-        databaseRef.child("actuadores/bombaAgua").setValue(enabled)
-            .addOnFailureListener { error ->
-                _uiState.update {
-                    it.copy(statusLogMessage = "Error al actualizar bombaAgua: ${error.localizedMessage}")
-                }
-            }
+        // TODO: Implementar POST a Django
     }
 
     fun setNebulizerState(enabled: Boolean) {
         if (_uiState.value.isEmergencyStopActive) return
-        databaseRef.child("actuadores/nebulizador").setValue(enabled)
-            .addOnFailureListener { error ->
-                _uiState.update {
-                    it.copy(statusLogMessage = "Error al actualizar nebulizador: ${error.localizedMessage}")
-                }
-            }
+        // TODO: Implementar POST a Django
     }
 
     fun selectDoseMl(doseMl: Int) {
         if (_uiState.value.isEmergencyStopActive) return
-        databaseRef.child("actuadores/dosisRiegoMl").setValue(doseMl)
-            .addOnFailureListener { error ->
-                _uiState.update {
-                    it.copy(statusLogMessage = "Error al actualizar dosisRiegoMl: ${error.localizedMessage}")
-                }
-            }
+        // TODO: Implementar POST a Django
     }
 
     fun triggerEmergencyStop() {
-        val newEmergencyState = !_uiState.value.isEmergencyStopActive
-        val updates = mutableMapOf<String, Any>(
-            "actuadores/paradaEmergencia" to newEmergencyState,
-        )
-        if (newEmergencyState) {
-            // Override prioritario: apaga inmediatamente ambos actuadores en la nube
-            updates["actuadores/bombaAgua"] = false
-            updates["actuadores/nebulizador"] = false
-        }
-        databaseRef.updateChildren(updates)
-            .addOnFailureListener { error ->
-                _uiState.update {
-                    it.copy(statusLogMessage = "Error en Parada de Emergencia: ${error.localizedMessage}")
-                }
-            }
+        // TODO: Implementar POST a Django
     }
 
     fun applyIrrigationDose() {
-        val current = _uiState.value
-        if (current.isEmergencyStopActive) return
-        val moistureGain = when (current.selectedDoseMl) {
-            50 -> 6
-            100 -> 12
-            else -> 24
-        }
-        val updatedMoisture = (current.soilMoisturePercent + moistureGain).coerceAtMost(100)
-        val updates = mapOf<String, Any>(
-            "actuadores/bombaAgua" to true,
-            "sensores/humedadSuelo" to updatedMoisture,
-        )
-        databaseRef.updateChildren(updates)
+        if (_uiState.value.isEmergencyStopActive) return
+        // TODO: Implementar POST a Django
     }
 
     fun setDarkMode(enabled: Boolean) {
@@ -406,7 +267,7 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     // ========================================================================
-    // FUNCIONES COMPLEMENTARIAS DEL DASHBOARD (ESCRITURA RTDB PARA PRUEBAS)
+    // FUNCIONES COMPLEMENTARIAS DEL DASHBOARD
     // ========================================================================
     fun selectPlantCategory(category: PlantCategory) {
         _uiState.update { current ->
@@ -422,26 +283,21 @@ class FloraSenseViewModel : ViewModel() {
         moisture: Int = _uiState.value.soilMoisturePercent,
         sunlight: Int = _uiState.value.sunlightPercent,
     ) {
+        // TODO: Eliminar o refactorizar si se va a reemplazar por datos 100% reales de Django
         val clampedMoisture = moisture.coerceIn(0, 100)
         val clampedSunlight = sunlight.coerceIn(0, 100)
-        val updates = mutableMapOf<String, Any>(
-            "sensores/temperatura" to temperature,
-            "sensores/humedadSuelo" to clampedMoisture,
-            "sensores/luzSolar" to clampedSunlight,
-        )
-        if (clampedMoisture < 30 && !_uiState.value.isEmergencyStopActive) {
-            updates["actuadores/bombaAgua"] = true
+
+        _uiState.update { current ->
+            current.copy(
+                temperatureCelsius = temperature,
+                soilMoisturePercent = clampedMoisture,
+                sunlightPercent = clampedSunlight
+            )
         }
-        databaseRef.updateChildren(updates)
     }
 
     fun simulateSecondDeviceSync() {
         if (_uiState.value.isEmergencyStopActive) return
-        val toggledNebulizer = !_uiState.value.isNebulizerOn
-        databaseRef.child("actuadores/nebulizador").setValue(toggledNebulizer)
-    }
-
-    override fun onCleared() {
-        databaseRef.removeEventListener(realtimeValueListener)
+        // TODO: Eliminar o refactorizar
     }
 }

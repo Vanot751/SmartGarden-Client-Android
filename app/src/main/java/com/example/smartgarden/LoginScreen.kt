@@ -184,30 +184,30 @@ fun LoginScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = if (isRegisterMode) "REGISTRO DE NUEVA CUENTA (FIREBASE AUTH)" else "AUTENTICACIÓN DE OPERADOR (FIREBASE AUTH)",
+                    text = if (isRegisterMode) "REGISTRO DE NUEVA CUENTA (API DJANGO)" else "AUTENTICACIÓN DE OPERADOR (API DJANGO)",
                     style = MaterialTheme.typography.labelSmall,
                     color = CharcoalSubtle,
                 )
 
-                // Campo de Email
+                // Campo de Usuario / Email
                 OutlinedTextField(
                     value = email,
                     onValueChange = {
                         email = it
                         onClearError()
                     },
-                    label = { Text("Correo Electrónico") },
-                    placeholder = { Text("operador@smartgarden.io") },
+                    label = { Text("Usuario o Correo") },
+                    placeholder = { Text("admin o operador@smartgarden.io") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Email,
-                            contentDescription = "Email",
+                            contentDescription = "Usuario",
                             tint = CharcoalText,
                         )
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
+                        keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier.fillMaxWidth(),
@@ -447,6 +447,7 @@ fun LoginScreen(
                         }
 
                         if (isRegisterMode) {
+                            // Por ahora tu API sólo tiene login, podemos mostrar un toast o usar onRegisterSubmit adaptado
                             onRegisterSubmit(email, confirmEmail, password, confirmPassword)
                         } else {
                             onLoginSubmit(email, password)
@@ -515,7 +516,7 @@ fun LoginScreen(
 
                 TextButton(
                     onClick = {
-                        email = "operador@smartgarden.io"
+                        email = "admin"
                         password = "Flora27400!"
                         if (rememberUser) {
                             prefs.edit().putString("saved_email", email).apply()

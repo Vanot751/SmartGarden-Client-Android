@@ -119,34 +119,27 @@ fun AppNavigation(
                 startDestination = FloraSenseRoute.LOGIN.route,
                 modifier = Modifier.padding(innerPadding),
             ) {
-                // Pantalla 1: Autenticación ISO/IEC 27400 (Firebase Auth)
+                // Pantalla 1: Autenticación (API Django)
                 composable(route = FloraSenseRoute.LOGIN.route) {
                     LoginScreen(
                         uiState = uiState,
                         onClearError = viewModel::clearAuthError,
                         onLoginSubmit = { email, password ->
-                            viewModel.loginWithFirebase(
-                                email = email,
+                            viewModel.loginWithDjango(
+                                username = email,
                                 password = password,
                                 onLoginSuccess = {
                                     navController.navigate(FloraSenseRoute.DASHBOARD.route) {
                                         popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
                                     }
                                 },
+                                onError = { /* El ViewModel ya maneja el estado de error en uiState.authError */ }
                             )
                         },
                         onRegisterSubmit = { email, confirmEmail, password, confirmPassword ->
-                            viewModel.registerWithFirebase(
-                                email = email,
-                                confirmEmail = confirmEmail,
-                                password = password,
-                                confirmPassword = confirmPassword,
-                                onRegisterSuccess = {
-                                    navController.navigate(FloraSenseRoute.DASHBOARD.route) {
-                                        popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
-                                    }
-                                },
-                            )
+                            // TODO: Implementar registro con Django cuando esté disponible en la API.
+                            // Por el momento se reutiliza login o puedes mostrar un mensaje:
+                            viewModel.clearAuthError()
                         },
                         onToggleDarkMode = { viewModel.toggleDarkMode(context) },
                     )
