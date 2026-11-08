@@ -55,6 +55,13 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
 
+    // Retrofit & REST API Network Layer (Django REST Backend)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
+    implementation(libs.gson)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)

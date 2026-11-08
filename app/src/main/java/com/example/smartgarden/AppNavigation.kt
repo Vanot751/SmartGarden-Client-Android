@@ -125,8 +125,9 @@ fun AppNavigation(
                         uiState = uiState,
                         onClearError = viewModel::clearAuthError,
                         onLoginSubmit = { email, password ->
-                            viewModel.loginWithFirebase(
-                                email = email,
+                            viewModel.loginWithDjango(
+                                context = context,
+                                username = email,
                                 password = password,
                                 onLoginSuccess = {
                                     navController.navigate(FloraSenseRoute.DASHBOARD.route) {
@@ -157,6 +158,13 @@ fun AppNavigation(
                     DashboardScreen(
                         uiState = uiState,
                         onSelectCategory = viewModel::selectPlantCategory,
+                        onSelectActivePlant = viewModel::selectActivePlant,
+                        onShowAddPlantDialog = { viewModel.setAddPlantDialogVisible(true) },
+                        onHideAddPlantDialog = { viewModel.setAddPlantDialogVisible(false) },
+                        onSearchPlants = { ctx, query -> viewModel.searchPlantsApi(ctx, query) },
+                        onAddNewPlant = { ctx, apodo, species, minT, maxT, hum ->
+                            viewModel.addNewPlant(ctx, apodo, species, minT, maxT, hum)
+                        },
                         onUpdateSimulatedTelemetry = viewModel::updateSimulatedTelemetry,
                         onSimulateSecondDevice = viewModel::simulateSecondDeviceSync,
                         onNavigateToControls = {

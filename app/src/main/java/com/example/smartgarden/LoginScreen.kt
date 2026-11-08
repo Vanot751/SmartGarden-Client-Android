@@ -515,8 +515,8 @@ fun LoginScreen(
 
                 TextButton(
                     onClick = {
-                        email = "operador@smartgarden.io"
-                        password = "Flora27400!"
+                        email = "operador_botanico"
+                        password = "TuPassword2026!"
                         if (rememberUser) {
                             prefs.edit().putString("saved_email", email).apply()
                         }
