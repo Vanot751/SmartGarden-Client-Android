@@ -536,7 +536,7 @@ fun ControlPanelScreen(
                             }
                         }
                         Text(
-                            text = "Nodo RTDB: ${uiState.firebaseNodePath}",
+                            text = "Modo: Conexión Remota (Django API)",
                             style = MaterialTheme.typography.bodyMedium,
                             color = CharcoalSubtle,
                             fontSize = 11.sp,

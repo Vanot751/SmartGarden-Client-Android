@@ -1,6 +1,5 @@
 package com.example.smartgarden
 
-import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -21,43 +20,31 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Eco
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.platform.LocalContext
-import com.example.smartgarden.network.models.PlantSearchResultItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,11 +70,6 @@ import java.util.Locale
 fun DashboardScreen(
     uiState: FloraSenseUiState,
     onSelectCategory: (PlantCategory) -> Unit,
-    onSelectActivePlant: (CustomPlantProfile) -> Unit,
-    onShowAddPlantDialog: () -> Unit,
-    onHideAddPlantDialog: () -> Unit,
-    onSearchPlants: (Context, String) -> Unit,
-    onAddNewPlant: (Context, String, String?, Float, Float, Int) -> Unit,
     onUpdateSimulatedTelemetry: (Float, Int, Int) -> Unit,
     onSimulateSecondDevice: () -> Unit,
     onNavigateToControls: () -> Unit,
@@ -95,15 +77,6 @@ fun DashboardScreen(
     onToggleDarkMode: () -> Unit,
 ) {
     var showSimulator by remember { mutableStateOf(false) }
-
-    if (uiState.isAddPlantDialogVisible) {
-        AddPlantDialog(
-            uiState = uiState,
-            onDismiss = onHideAddPlantDialog,
-            onSearch = onSearchPlants,
-            onAddPlant = onAddNewPlant,
-        )
-    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -137,11 +110,11 @@ fun DashboardScreen(
             }
 
             // ================================================================
-            // FILTROS TIPO "CHIPS" PARA CULTIVOS Y CULTIVOS PERSONALIZADOS
+            // FILTROS TIPO "CHIPS" PARA CATEGORÍAS DE PLANTAS
             // ================================================================
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "CULTIVO Y PERFIL BOTÁNICO ACTIVO",
+                    text = "PERFIL BOTÁNICO DE CULTIVO",
                     style = MaterialTheme.typography.labelSmall,
                     color = CharcoalSubtle,
                 )
@@ -150,45 +123,15 @@ fun DashboardScreen(
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Chip para Agregar Nueva Planta (+ Agregar Planta)
-                    FilterChip(
-                        selected = false,
-                        onClick = onShowAddPlantDialog,
-                        label = {
-                            Text(
-                                text = "+ Agregar Planta",
-                                fontWeight = FontWeight.Bold,
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Agregar Planta",
-                                modifier = Modifier.size(16.dp),
-                            )
-                        },
-                        shape = RoundedCornerShape(50),
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = EmeraldSoftBg,
-                            labelColor = CharcoalText,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = false,
-                            borderColor = EmeraldActive,
-                        ),
-                    )
-
-                    uiState.userPlants.forEach { plant ->
-                        val isSelected = uiState.activePlant.id == plant.id
+                    PlantCategory.entries.forEach { category ->
+                        val isSelected = uiState.selectedCategory == category
                         FilterChip(
                             selected = isSelected,
-                            onClick = { onSelectActivePlant(plant) },
+                            onClick = { onSelectCategory(category) },
                             label = {
                                 Text(
-                                    text = plant.apodo,
+                                    text = category.displayName,
                                     fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
                                 )
                             },
@@ -752,258 +695,4 @@ private fun FirebaseSyncFooterCard(
             )
         }
     }
-}
-
-private fun getRecommendedParametersForSpecies(speciesName: String?): Triple<Float, Float, Int> {
-    val name = speciesName?.lowercase(Locale.getDefault()) ?: ""
-    return when {
-        name.contains("cactus") || name.contains("suculenta") || name.contains("aloe") || name.contains("jade") || name.contains("sansevieria") || name.contains("suegra") || name.contains("crasa") -> {
-            Triple(18.0f, 38.0f, 20)
-        }
-        name.contains("limon") || name.contains("naranjo") || name.contains("palto") || name.contains("olivo") || name.contains("higuera") || name.contains("cerezo") || name.contains("durazn") || name.contains("manzano") || name.contains("parra") || name.contains("granado") || name.contains("chirimoyo") -> {
-            Triple(15.0f, 32.0f, 40)
-        }
-        name.contains("arandano") || name.contains("frambuesa") || name.contains("frambueso") || name.contains("frutilla") || name.contains("fresa") -> {
-            Triple(16.0f, 30.0f, 45)
-        }
-        name.contains("monstera") || name.contains("pothos") || name.contains("potus") || name.contains("gomero") || name.contains("ficus") || name.contains("orquidea") || name.contains("helecho") || name.contains("cradle") || name.contains("moises") || name.contains("cinta") -> {
-            Triple(20.0f, 32.0f, 35)
-        }
-        name.contains("albahaca") || name.contains("menta") || name.contains("romero") || name.contains("oregano") || name.contains("cilantro") || name.contains("perejil") || name.contains("tomillo") || name.contains("cedron") || name.contains("ruda") || name.contains("lavanda") || name.contains("aji") || name.contains("tomate") -> {
-            Triple(18.0f, 30.0f, 30)
-        }
-        else -> Triple(18.0f, 35.0f, 30)
-    }
-}
-
-@Composable
-private fun AddPlantDialog(
-    uiState: FloraSenseUiState,
-    onDismiss: () -> Unit,
-    onSearch: (Context, String) -> Unit,
-    onAddPlant: (Context, String, String?, Float, Float, Int) -> Unit,
-) {
-    val context = LocalContext.current
-    var apodo by remember { mutableStateOf("") }
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedSpecies by remember { mutableStateOf<PlantSearchResultItem?>(null) }
-    var tempMin by remember { mutableStateOf("18.0") }
-    var tempMax by remember { mutableStateOf("35.0") }
-    var humedadOptima by remember { mutableStateOf("30") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "🌱 Agregar Nuevo Cultivo",
-                style = MaterialTheme.typography.headlineMedium,
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "1. BUSCAR ESPECIE BOTÁNICA (API REST)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CharcoalSubtle,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Ej: Monstera, Cactus, Rosa...") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    IconButton(
-                        onClick = { onSearch(context, searchQuery) },
-                        modifier = Modifier.background(EmeraldActive, RoundedCornerShape(12.dp)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Buscar",
-                            tint = CharcoalText,
-                        )
-                    }
-                }
-
-                if (uiState.isSearchingPlants) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = EmeraldActive,
-                        )
-                    }
-                }
-
-                if (uiState.plantSearchResults.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 140.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        uiState.plantSearchResults.forEach { result ->
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedSpecies = result
-                                        apodo = result.commonName ?: apodo
-                                        val (recMin, recMax, recHum) = getRecommendedParametersForSpecies(result.commonName ?: result.apiSpeciesId)
-                                        tempMin = String.format(Locale.US, "%.1f", recMin)
-                                        tempMax = String.format(Locale.US, "%.1f", recMax)
-                                        humedadOptima = recHum.toString()
-                                    },
-                                color = if (selectedSpecies == result) EmeraldSoftBg else WarmSurfaceContainer,
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Eco,
-                                        contentDescription = null,
-                                        tint = EmeraldActive,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Column {
-                                        Text(
-                                            text = result.commonName ?: "Especie sin nombre",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            color = CharcoalText,
-                                        )
-                                        Text(
-                                            text = result.scientificName ?: "",
-                                            fontSize = 10.sp,
-                                            color = CharcoalSubtle,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Text(
-                    text = "2. PARÁMETROS DEL CULTIVO",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CharcoalSubtle,
-                )
-
-                if (selectedSpecies != null) {
-                    val (rMin, rMax, rHum) = getRecommendedParametersForSpecies(selectedSpecies?.commonName ?: selectedSpecies?.apiSpeciesId)
-                    Surface(
-                        color = EmeraldSoftBg,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = EmeraldActive,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = "✓ Parámetros recomendados aplicados: ${String.format(Locale.US, "%.1f", rMin)}°C - ${String.format(Locale.US, "%.1f", rMax)}°C | Humedad ${rHum}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 11.sp,
-                                color = CharcoalText,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = apodo,
-                    onValueChange = { apodo = it },
-                    label = { Text("Apodo de la Planta / Maceta") },
-                    placeholder = { Text("Ej: Monstera Sala") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = tempMin,
-                        onValueChange = { tempMin = it },
-                        label = { Text("Temp. Mín (°C)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    OutlinedTextField(
-                        value = tempMax,
-                        onValueChange = { tempMax = it },
-                        label = { Text("Temp. Máx (°C)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                }
-
-                OutlinedTextField(
-                    value = humedadOptima,
-                    onValueChange = { humedadOptima = it },
-                    label = { Text("Humedad Mínima Óptima (%)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val minT = tempMin.toFloatOrNull() ?: 18f
-                    val maxT = tempMax.toFloatOrNull() ?: 35f
-                    val hum = humedadOptima.toIntOrNull() ?: 30
-                    onAddPlant(
-                        context,
-                        apodo,
-                        selectedSpecies?.commonName,
-                        minT,
-                        maxT,
-                        hum,
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldActive, contentColor = CharcoalText),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text("Guardar Cultivo", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar", color = CharcoalSubtle)
-            }
-        },
-        containerColor = PearlWarmBackground,
-    )
 }

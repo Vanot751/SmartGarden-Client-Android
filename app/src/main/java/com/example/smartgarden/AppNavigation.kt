@@ -119,14 +119,17 @@ fun AppNavigation(
                 startDestination = FloraSenseRoute.LOGIN.route,
                 modifier = Modifier.padding(innerPadding),
             ) {
-                // Pantalla 1: Autenticación ISO/IEC 27400 (Firebase Auth)
+                // Pantalla 1: Autenticación (API Django)
                 composable(route = FloraSenseRoute.LOGIN.route) {
                     LoginScreen(
                         uiState = uiState,
                         onClearError = viewModel::clearAuthError,
                         onLoginSubmit = { email, password ->
                             viewModel.loginWithDjango(
+<<<<<<< HEAD
                                 context = context,
+=======
+>>>>>>> 65f5faea3dfb8dfec4e605c3b000c574d388957f
                                 username = email,
                                 password = password,
                                 onLoginSuccess = {
@@ -134,20 +137,13 @@ fun AppNavigation(
                                         popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
                                     }
                                 },
+                                onError = { /* El ViewModel ya maneja el estado de error en uiState.authError */ }
                             )
                         },
                         onRegisterSubmit = { email, confirmEmail, password, confirmPassword ->
-                            viewModel.registerWithFirebase(
-                                email = email,
-                                confirmEmail = confirmEmail,
-                                password = password,
-                                confirmPassword = confirmPassword,
-                                onRegisterSuccess = {
-                                    navController.navigate(FloraSenseRoute.DASHBOARD.route) {
-                                        popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
-                                    }
-                                },
-                            )
+                            // TODO: Implementar registro con Django cuando esté disponible en la API.
+                            // Por el momento se reutiliza login o puedes mostrar un mensaje:
+                            viewModel.clearAuthError()
                         },
                         onToggleDarkMode = { viewModel.toggleDarkMode(context) },
                     )
@@ -158,13 +154,6 @@ fun AppNavigation(
                     DashboardScreen(
                         uiState = uiState,
                         onSelectCategory = viewModel::selectPlantCategory,
-                        onSelectActivePlant = viewModel::selectActivePlant,
-                        onShowAddPlantDialog = { viewModel.setAddPlantDialogVisible(true) },
-                        onHideAddPlantDialog = { viewModel.setAddPlantDialogVisible(false) },
-                        onSearchPlants = { ctx, query -> viewModel.searchPlantsApi(ctx, query) },
-                        onAddNewPlant = { ctx, apodo, species, minT, maxT, hum ->
-                            viewModel.addNewPlant(ctx, apodo, species, minT, maxT, hum)
-                        },
                         onUpdateSimulatedTelemetry = viewModel::updateSimulatedTelemetry,
                         onSimulateSecondDevice = viewModel::simulateSecondDeviceSync,
                         onNavigateToControls = {
