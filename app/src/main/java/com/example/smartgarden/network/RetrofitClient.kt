@@ -6,7 +6,8 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
-    // Usamos la IP de la red local (192.168.1.115) para evitar problemas de loopback del emulador
+    // Ahora que tu backend está corriendo en 0.0.0.0:8000, podemos usar
+    // directamente la IP de tu red local que sí es visible para el emulador.
     private const val BASE_URL = "http://192.168.1.115:8000/api/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {

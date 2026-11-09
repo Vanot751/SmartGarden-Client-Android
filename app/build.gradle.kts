@@ -51,7 +51,6 @@ dependencies {
     // NUEVA ARQUITECTURA REST & PERSISTENCIA OFFLINE
     // =========================================================
 
-<<<<<<< HEAD
     // Retrofit & REST API Network Layer (Django REST Backend)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
@@ -59,27 +58,17 @@ dependencies {
     implementation(libs.okhttp.logging.interceptor)
     implementation(libs.gson)
 
-=======
-    // Retrofit2 (Peticiones HTTP)
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-
-    // OkHttp3 (Encabezados JWT e Interceptores)
-    implementation("com.squareup.okhttp3:okhttp:4.11.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")
-
     // Room (Almacenamiento Offline)
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
     // Security Crypto (Almacenamiento Local Encriptado)
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation(libs.security.crypto)
 
     // =========================================================
     // DEPENDENCIAS BASE DEL SISTEMA
     // =========================================================
->>>>>>> 65f5faea3dfb8dfec4e605c3b000c574d388957f
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)

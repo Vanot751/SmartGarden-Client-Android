@@ -126,10 +126,6 @@ fun AppNavigation(
                         onClearError = viewModel::clearAuthError,
                         onLoginSubmit = { email, password ->
                             viewModel.loginWithDjango(
-<<<<<<< HEAD
-                                context = context,
-=======
->>>>>>> 65f5faea3dfb8dfec4e605c3b000c574d388957f
                                 username = email,
                                 password = password,
                                 onLoginSuccess = {
