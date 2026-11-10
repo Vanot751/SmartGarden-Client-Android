@@ -1,7 +1,6 @@
 # SmartGarden Android
 
-Cliente Android nativo de SmartGarden. La aplicación consume la misma API
-Django REST que utiliza la web desplegada:
+Cliente Android nativo de SmartGarden. La aplicación consume la misma API Django REST que utiliza la plataforma web:
 
 ```text
 Android -> https://smart-garden-api-django.vercel.app/api/
@@ -12,39 +11,32 @@ Android -> https://smart-garden-api-django.vercel.app/api/
 ## Arquitectura
 
 - Kotlin, Jetpack Compose y Material 3.
-- MVVM con `StateFlow`.
-- Autenticación mediante SimpleJWT (access y refresh tokens) y almacenamiento cifrado en `EncryptedSharedPreferences` (AES256).
+- Arquitectura MVVM con `StateFlow`.
+- Autenticación mediante SimpleJWT (access y refresh tokens) y almacenamiento seguro en `EncryptedSharedPreferences` (AES256).
 - Renovación transparente y automática de tokens mediante `TokenAuthenticator` en OkHttp (`POST /api/token/refresh/`).
-- Persistencia offline de datos botánicos y telemetría mediante `OfflineCacheManager` para funcionamiento sin conexión.
-- Retrofit + OkHttp para la comunicación con Django.
+- Persistencia offline de datos botánicos y telemetría mediante `OfflineCacheManager` (Room Database) para funcionamiento sin conexión.
+- Retrofit y OkHttp para la comunicación con el backend Django.
 - Modo claro pastel y modo oscuro OLED persistidos localmente.
-- Sondeo moderado de telemetría mientras la sesión está activa.
+- Sondeo de telemetría mientras la sesión está activa.
 
 ## Funcionalidades conectadas a la API
 
-- Inicio de sesión JWT.
+- Inicio de sesión con autenticación JWT.
 - Registro de cuentas mediante `POST /api/auth/register/`.
-- Consulta de módulos y macetas del usuario.
-- Creación automática de una maceta virtual para cuentas sin módulos.
-- Búsqueda en el catálogo botánico.
-- Creación y eliminación de plantas asignadas a módulos.
+- Consulta de módulos y macetas del usuario autenticado.
+- Creación automática de una maceta virtual para cuentas sin módulos registrados.
+- Búsqueda en el catálogo botánico de especies.
+- Asignación y desvinculación de plantas en módulos.
 - Lectura, envío e histórico de telemetría por módulo.
-- Sincronización manual y automática con Django.
+- Sincronización manual y automática con el backend Django.
 
 ## Funcionalidades locales
 
-La API actual no expone un recurso persistente de actuadores. Por esa razón,
-los controles de bomba, nebulizador, dosis y parada de emergencia se mantienen
-como estado local y no se presentan como sincronizados con un servicio
-inexistente.
+La API actual no expone un recurso persistente de actuadores. Por esa razón, los controles de bomba, nebulizador, dosis y parada de emergencia se gestionan como estado local en la interfaz.
 
-La simulación de temperatura, humedad y luz sí se envía al módulo activo
-mediante `POST /api/modules/<id>/telemetry/`, por lo que queda disponible en
-la telemetría de Django y se conserva al actualizar la aplicación.
+La simulación de temperatura, humedad y luz se transmite al módulo activo mediante `POST /api/modules/<id>/telemetry/`, quedando almacenada en la telemetría de Django y conservándose al actualizar la aplicación.
 
-Las alertas ambientales actuales son notificaciones locales mientras la
-aplicación está abierta. No se integra Firebase, FCM ni ningún servicio push
-en esta versión.
+Las alertas ambientales actuales operan como notificaciones locales mientras la aplicación se encuentra en ejecución.
 
 ## Compilación
 
@@ -54,5 +46,4 @@ Desde la carpeta del proyecto:
 .\gradlew.bat :app:assembleDebug
 ```
 
-El proyecto requiere un JDK compatible y el Android SDK configurado en
-`ANDROID_HOME` o mediante `local.properties`.
+El proyecto requiere un JDK compatible y el Android SDK configurado en `ANDROID_HOME` o mediante `local.properties`.
