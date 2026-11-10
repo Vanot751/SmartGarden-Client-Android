@@ -75,12 +75,17 @@ fun AppNavigation(
             // Solo evaluar alertas cuando la última lectura de la API fue válida.
             if (uiState.isRealtimeConnected) {
                 if (uiState.isCriticalHeat) {
-                    NotificationHelper.sendTemperatureAlert(context, uiState.temperatureCelsius)
+                    NotificationHelper.sendTemperatureAlert(
+                        context = context,
+                        plantName = uiState.activePlant?.apodo ?: "la maceta activa",
+                        tempCelsius = uiState.temperatureCelsius,
+                    )
                 }
-                val minMoistureThreshold = uiState.selectedCategory.minMoistureThreshold
+                val minMoistureThreshold = uiState.activeMoistureThreshold
                 if (uiState.soilMoisturePercent < minMoistureThreshold) {
                     NotificationHelper.sendMoistureAlert(
                         context = context,
+                        plantName = uiState.activePlant?.apodo ?: "La maceta activa",
                         moisturePercent = uiState.soilMoisturePercent,
                         minThresholdPercent = minMoistureThreshold,
                     )

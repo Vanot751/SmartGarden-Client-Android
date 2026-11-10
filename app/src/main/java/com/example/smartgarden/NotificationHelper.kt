@@ -17,7 +17,7 @@ object NotificationHelper {
     private const val NOTIFICATION_ID_MOISTURE = 1002
 
     @SuppressLint("MissingPermission")
-    fun sendTemperatureAlert(context: Context, tempCelsius: Float) {
+    fun sendTemperatureAlert(context: Context, plantName: String, tempCelsius: Float) {
         // Verificar si el permiso de notificaciones está concedido en Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
@@ -33,10 +33,10 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
             .setSmallIcon(R.drawable.app_logo)
             .setContentTitle("🔥 Alerta Crítica de Temperatura")
-            .setContentText("La temperatura del jardín ha alcanzado ${formattedTemp}°C.")
+            .setContentText("$plantName alcanzó ${formattedTemp}°C.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("¡Atención FloraSense! La temperatura de tu jardín es de ${formattedTemp}°C (> 35°C). Se requiere atención inmediata o activar el sistema de ventilación/nebulización.")
+                    .bigText("¡Atención! La maceta \"$plantName\" registra ${formattedTemp}°C (> 35°C). Se requiere atención inmediata o activar el sistema de ventilación/nebulización.")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
@@ -48,7 +48,12 @@ object NotificationHelper {
     }
 
     @SuppressLint("MissingPermission")
-    fun sendMoistureAlert(context: Context, moisturePercent: Int, minThresholdPercent: Int = 30) {
+    fun sendMoistureAlert(
+        context: Context,
+        plantName: String,
+        moisturePercent: Int,
+        minThresholdPercent: Int = 30,
+    ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     context,
@@ -62,10 +67,10 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
             .setSmallIcon(R.drawable.app_logo)
             .setContentTitle("💧 Alerta Crítica de Humedad del Suelo")
-            .setContentText("La humedad del suelo bajó al $moisturePercent% (Mínimo: $minThresholdPercent%).")
+            .setContentText("$plantName tiene humedad de suelo en $moisturePercent% (mínimo: $minThresholdPercent%).")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("¡Atención FloraSense! La humedad del suelo ha descendido al $moisturePercent% (debajo del umbral óptimo de $minThresholdPercent%). Se recomienda activar la bomba de agua o aplicar dosis de riego.")
+                    .bigText("¡Atención! La maceta \"$plantName\" tiene humedad de suelo de $moisturePercent% (debajo del mínimo de $minThresholdPercent%). Se recomienda activar la bomba de agua o aplicar una dosis de riego.")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)

@@ -41,6 +41,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -83,6 +84,7 @@ fun DashboardScreen(
     onToggleDarkMode: () -> Unit,
 ) {
     var showSimulator by remember { mutableStateOf(false) }
+    var plantPendingDelete by remember { mutableStateOf<CustomPlantProfile?>(null) }
     val scrollState = rememberScrollState()
 
     Column(
@@ -120,7 +122,7 @@ fun DashboardScreen(
             onEnsureModule = onEnsureModule,
             onSearch = onSearchPlants,
             onAddPlant = onAddPlant,
-            onDeletePlant = onDeletePlant,
+            onDeletePlant = { plantPendingDelete = it },
         )
 
         SectionTitle(
@@ -177,6 +179,31 @@ fun DashboardScreen(
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    plantPendingDelete?.let { plant ->
+        AlertDialog(
+            onDismissRequest = { plantPendingDelete = null },
+            title = { Text("Eliminar maceta") },
+            text = {
+                Text("¿Seguro que deseas eliminar \"${plant.apodo}\"? También se eliminarán sus parámetros asociados.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeletePlant(plant)
+                        plantPendingDelete = null
+                    },
+                ) {
+                    Text("Eliminar", color = EmergencyRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { plantPendingDelete = null }) {
+                    Text("Cancelar")
+                }
+            },
+        )
     }
 }
 
