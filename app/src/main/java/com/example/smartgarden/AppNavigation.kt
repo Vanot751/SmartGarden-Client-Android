@@ -61,11 +61,18 @@ fun AppNavigation(
     }
 
     FloraSenseTheme(isDarkMode = uiState.isDarkMode) {
-        // Redirección automática al Dashboard si existe una sesión JWT válida.
+        // Redirección automática al Dashboard si existe sesión válida, o al Login si expira.
         LaunchedEffect(uiState.isAuthenticated) {
             if (uiState.isAuthenticated && isRememberUser) {
                 navController.navigate(FloraSenseRoute.DASHBOARD.route) {
                     popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
+                }
+            } else if (!uiState.isAuthenticated) {
+                val current = navController.currentBackStackEntry?.destination?.route
+                if (current != null && current != FloraSenseRoute.LOGIN.route) {
+                    navController.navigate(FloraSenseRoute.LOGIN.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             }
         }

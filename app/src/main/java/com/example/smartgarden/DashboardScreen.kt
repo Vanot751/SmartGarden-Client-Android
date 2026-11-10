@@ -1,5 +1,7 @@
 package com.example.smartgarden
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Thermostat
@@ -61,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -115,6 +119,8 @@ fun DashboardScreen(
             subtitle = "${uiState.userPlants.size} macetas • ${uiState.lastSyncSource}",
         )
         SummaryCard(uiState = uiState, onOpenControls = onNavigateToControls)
+
+        ExpertWebPanelCard()
 
         PlantFleetSection(
             uiState = uiState,
@@ -216,6 +222,7 @@ private fun DashboardHeader(
     onLogout: () -> Unit,
     isDarkMode: Boolean,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -238,6 +245,23 @@ private fun DashboardHeader(
                 )
             }
         }
+        IconButton(
+            onClick = {
+                try {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://smart-garden-web-react.vercel.app/")
+                    )
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        ) {
+            Icon(
+                imageVector = Icons.Default.Language,
+                contentDescription = "Abrir Panel Experto Web en navegador",
+                tint = CharcoalText,
+            )
+        }
         IconButton(onClick = onRefresh) {
             Icon(Icons.Default.Refresh, contentDescription = "Actualizar", tint = CharcoalText)
         }
@@ -250,6 +274,82 @@ private fun DashboardHeader(
         }
         IconButton(onClick = onLogout) {
             Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Cerrar sesión", tint = CharcoalSubtle)
+        }
+    }
+}
+
+@Composable
+private fun ExpertWebPanelCard() {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = WarmSurfaceContainer),
+        border = BorderStroke(1.dp, CharcoalText.copy(alpha = 0.08f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = EmeraldSoftBg,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = "Panel Experto Web",
+                        tint = EmeraldActive,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Panel Experto Web",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = CharcoalText,
+                    )
+                    Text(
+                        text = "Gemelo Digital 3D y analítica histórica",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CharcoalSubtle,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    try {
+                        val intent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://smart-garden-web-react.vercel.app/")
+                        )
+                        context.startActivity(intent)
+                    } catch (_: Exception) {}
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = EmeraldActive,
+                    contentColor = CharcoalText,
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Abrir ↗",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartgarden.network.CreateUserPlantRequest
 import com.example.smartgarden.network.LoginRequest
+import com.example.smartgarden.network.OfflineCacheManager
 import com.example.smartgarden.network.PlantSearchDto
 import com.example.smartgarden.network.RetrofitClient
 import com.example.smartgarden.network.TelemetryDto
@@ -95,8 +96,27 @@ class FloraSenseViewModel : ViewModel() {
     private var telemetrySubmissionJob: Job? = null
 
     init {
-        if (!TokenManager.getToken().isNullOrEmpty()) {
-            _uiState.update { it.copy(isAuthenticated = true, userEmail = "Usuario autenticado") }
+        val savedToken = TokenManager.getToken()
+        val savedUsername = TokenManager.getUsername()
+        if (!savedToken.isNullOrEmpty()) {
+            val cachedPlants = OfflineCacheManager.getPlants()
+            val cachedModules = OfflineCacheManager.getModules()
+            val cachedTelemetry = OfflineCacheManager.getTelemetry()
+
+            _uiState.update {
+                it.copy(
+                    isAuthenticated = true,
+                    userEmail = savedUsername ?: "sicosis3dfx",
+                    userPlants = cachedPlants,
+                    activePlant = cachedPlants.firstOrNull(),
+                    moduleIds = cachedModules,
+                    connectedDevicesCount = cachedModules.size,
+                    temperatureCelsius = cachedTelemetry?.temperatura ?: it.temperatureCelsius,
+                    soilMoisturePercent = (cachedTelemetry?.humedad ?: it.soilMoisturePercent.toFloat()).toInt().coerceIn(0, 100),
+                    sunlightPercent = (cachedTelemetry?.luz ?: it.sunlightPercent.toFloat()).toInt().coerceIn(0, 100),
+                    statusLogMessage = if (cachedPlants.isNotEmpty()) "Sincronizando con Django..." else "Conectando con la API...",
+                )
+            }
             refreshCloudState()
         }
         viewModelScope.launch {
@@ -113,6 +133,11 @@ class FloraSenseViewModel : ViewModel() {
                 val modules = loadOrCreateModule()
                 val plants = RetrofitClient.api.getUserPlants().results
                 val mapped = plants.map(::toProfile)
+
+                // Guardar en almacenamiento seguro offline
+                OfflineCacheManager.savePlants(mapped)
+                OfflineCacheManager.saveModules(modules.map { it.id })
+
                 _uiState.update {
                     it.copy(
                         userPlants = mapped,
@@ -132,6 +157,10 @@ class FloraSenseViewModel : ViewModel() {
                     )
                 }
             } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
                 _uiState.update {
                     it.copy(
                         isRealtimeConnected = false,
@@ -150,6 +179,10 @@ class FloraSenseViewModel : ViewModel() {
                 loadOrCreateModule()
                 refreshCloudState()
             } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
                 _uiState.update {
                     it.copy(
                         isRealtimeConnected = false,
@@ -198,6 +231,12 @@ class FloraSenseViewModel : ViewModel() {
                     return@launch
                 }
                 applyTelemetry(reading, (System.currentTimeMillis() - startedAt).toInt())
+            } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
+                markApiError("No se pudo actualizar la telemetría", error)
             } catch (error: Exception) {
                 markApiError("No se pudo actualizar la telemetría", error)
             }
@@ -223,7 +262,11 @@ class FloraSenseViewModel : ViewModel() {
                 val response = RetrofitClient.api.login(LoginRequest(cleanUsername, password))
                 val accessToken = response.access ?: response.token
                     ?: error("El servidor no devolvió un token de acceso.")
-                TokenManager.saveToken(accessToken)
+                TokenManager.saveSession(
+                    accessToken = accessToken,
+                    refreshToken = response.refresh,
+                    username = cleanUsername
+                )
                 _uiState.update {
                     it.copy(
                         isAuthenticated = true,
@@ -268,7 +311,11 @@ class FloraSenseViewModel : ViewModel() {
                 val response = RetrofitClient.api.register(req)
                 val token = response.access ?: response.token
                 if (!token.isNullOrEmpty()) {
-                    TokenManager.saveToken(token)
+                    TokenManager.saveSession(
+                        accessToken = token,
+                        refreshToken = response.refresh,
+                        username = cleanUsername
+                    )
                     _uiState.update {
                         it.copy(
                             isAuthenticated = true,
@@ -340,10 +387,23 @@ class FloraSenseViewModel : ViewModel() {
         }
     }
 
+    private fun handleSessionExpired() {
+        TokenManager.clearAll()
+        _uiState.update {
+            it.copy(
+                isAuthenticated = false,
+                isRealtimeConnected = false,
+                authError = "Tu sesión ha expirado por seguridad. Por favor ingresa nuevamente.",
+                statusLogMessage = "Sesión expirada",
+            )
+        }
+    }
+
     fun clearAuthError() = _uiState.update { it.copy(authError = null) }
 
     fun logout(onLoggedOut: () -> Unit) {
-        TokenManager.clearToken()
+        TokenManager.clearAll()
+        OfflineCacheManager.clearCache()
         _uiState.value = FloraSenseUiState(statusLogMessage = "Sesión cerrada")
         onLoggedOut()
     }
@@ -473,6 +533,13 @@ class FloraSenseViewModel : ViewModel() {
                         },
                     )
                 }
+            } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
+                markApiError("No se pudo consultar el catálogo botánico", error)
+                _uiState.update { it.copy(isSearchingPlants = false, plantSearchResults = emptyList()) }
             } catch (error: Exception) {
                 markApiError("No se pudo consultar el catálogo botánico", error)
                 _uiState.update { it.copy(isSearchingPlants = false, plantSearchResults = emptyList()) }
@@ -510,6 +577,10 @@ class FloraSenseViewModel : ViewModel() {
                     )
                     createSuccess = true
                 } catch (e: retrofit2.HttpException) {
+                    if (e.code() == 401) {
+                        handleSessionExpired()
+                        return@launch
+                    }
                     if (e.code() == 400) {
                         // Intento A: Probar con module = null (sin vincular inmediatamente a un módulo ocupado)
                         try {
@@ -525,6 +596,10 @@ class FloraSenseViewModel : ViewModel() {
                             )
                             createSuccess = true
                         } catch (e2: retrofit2.HttpException) {
+                            if (e2.code() == 401) {
+                                handleSessionExpired()
+                                return@launch
+                            }
                             // Intento B: Si requiere módulo y todos están ocupados, reemplaza la planta vieja del módulo objetivo
                             val moduleToOverwrite = targetModuleId ?: modules.firstOrNull()?.id
                             if (moduleToOverwrite != null) {
@@ -564,6 +639,10 @@ class FloraSenseViewModel : ViewModel() {
                     refreshCloudState()
                 }
             } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
                 val details = parseHttpError(error)
                 _uiState.update {
                     it.copy(statusLogMessage = "No se pudo guardar la planta: $details")
@@ -582,6 +661,12 @@ class FloraSenseViewModel : ViewModel() {
             try {
                 RetrofitClient.api.deleteUserPlant(id)
                 refreshCloudState()
+            } catch (error: retrofit2.HttpException) {
+                if (error.code() == 401) {
+                    handleSessionExpired()
+                    return@launch
+                }
+                markApiError("No se pudo eliminar la planta", error)
             } catch (error: Exception) {
                 markApiError("No se pudo eliminar la planta", error)
             }
@@ -589,6 +674,7 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     private fun applyTelemetry(reading: TelemetryDto, latency: Int) {
+        OfflineCacheManager.saveTelemetry(reading)
         _uiState.update {
             it.copy(
                 temperatureCelsius = reading.temperatura ?: it.temperatureCelsius,

@@ -12,7 +12,7 @@ class AuthInterceptor : Interceptor {
 
         val newRequest = if (!token.isNullOrEmpty()) {
             originalRequest.newBuilder()
-                .addHeader("Authorization", "Bearer $token")
+                .header("Authorization", "Bearer $token")
                 .build()
         } else {
             originalRequest

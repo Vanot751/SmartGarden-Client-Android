@@ -15,6 +15,9 @@ interface SmartGardenApi {
     @POST("auth/register/")
     suspend fun register(@Body request: RegisterRequest): LoginResponse
 
+    @POST("token/refresh/")
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): RefreshTokenResponse
+
     @GET("modules/")
     suspend fun getModules(): PageResponse<GardenModuleDto>
 
@@ -52,6 +55,15 @@ interface SmartGardenApi {
 data class LoginRequest(
     val username: String,
     val password: String,
+)
+
+data class RefreshTokenRequest(
+    val refresh: String,
+)
+
+data class RefreshTokenResponse(
+    @SerializedName("access") val access: String? = null,
+    @SerializedName("refresh") val refresh: String? = null,
 )
 
 data class RegisterRequest(

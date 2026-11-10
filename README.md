@@ -13,7 +13,9 @@ Android -> https://smart-garden-api-django.vercel.app/api/
 
 - Kotlin, Jetpack Compose y Material 3.
 - MVVM con `StateFlow`.
-- Autenticación mediante SimpleJWT y almacenamiento cifrado del token.
+- Autenticación mediante SimpleJWT (access y refresh tokens) y almacenamiento cifrado en `EncryptedSharedPreferences` (AES256).
+- Renovación transparente y automática de tokens mediante `TokenAuthenticator` en OkHttp (`POST /api/token/refresh/`).
+- Persistencia offline de datos botánicos y telemetría mediante `OfflineCacheManager` para funcionamiento sin conexión.
 - Retrofit + OkHttp para la comunicación con Django.
 - Modo claro pastel y modo oscuro OLED persistidos localmente.
 - Sondeo moderado de telemetría mientras la sesión está activa.

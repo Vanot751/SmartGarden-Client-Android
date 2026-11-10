@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.smartgarden.network.TokenManager
+import com.example.smartgarden.network.OfflineCacheManager
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -119,8 +120,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Inicializamos el manejador seguro de Tokens
+        // Inicializamos el manejador seguro de Tokens y la persistencia offline
         TokenManager.init(applicationContext)
+        OfflineCacheManager.init(applicationContext)
         
         enableEdgeToEdge()
 

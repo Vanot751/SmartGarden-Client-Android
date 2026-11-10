@@ -7,7 +7,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
     // Conexión a la API desplegada en Vercel (HTTPS)
-    private const val BASE_URL = "https://smart-garden-api-django.vercel.app/api/"
+    const val BASE_URL = "https://smart-garden-api-django.vercel.app/api/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         // Nivel NONE para seguridad en producción (evita filtrar tokens JWT en Logcat)
@@ -16,6 +16,7 @@ object RetrofitClient {
 
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(AuthInterceptor())
+        .authenticator(TokenAuthenticator())
         .addInterceptor(loggingInterceptor)
         .build()
 
