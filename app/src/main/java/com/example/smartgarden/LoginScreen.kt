@@ -21,10 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
@@ -69,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Pantalla 1: Autenticación minimalista con Firebase Auth simulado y cumplimiento visual ISO/IEC 27400.
+ * Pantalla 1: Autenticación minimalista con JWT de Django.
  */
 @Composable
 fun LoginScreen(
@@ -91,6 +89,7 @@ fun LoginScreen(
     var isPasswordVisible by rememberSaveable { mutableStateOf(false) }
     var isConfirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
     var isRegisterMode by rememberSaveable { mutableStateOf(false) }
+    var validationError by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -194,6 +193,7 @@ fun LoginScreen(
                     value = email,
                     onValueChange = {
                         email = it
+                        validationError = null
                         onClearError()
                     },
                     label = { Text("Usuario o Correo") },
@@ -231,6 +231,7 @@ fun LoginScreen(
                         value = confirmEmail,
                         onValueChange = {
                             confirmEmail = it
+                            validationError = null
                             onClearError()
                         },
                         label = { Text("Confirmar Correo Electrónico") },
@@ -268,6 +269,7 @@ fun LoginScreen(
                     value = password,
                     onValueChange = {
                         password = it
+                        validationError = null
                         onClearError()
                     },
                     label = { Text("Contraseña Cifrada") },
@@ -322,6 +324,7 @@ fun LoginScreen(
                         value = confirmPassword,
                         onValueChange = {
                             confirmPassword = it
+                            validationError = null
                             onClearError()
                         },
                         label = { Text("Confirmar Contraseña Cifrada") },
@@ -404,7 +407,8 @@ fun LoginScreen(
                 }
 
                 // Mensaje de error de validación
-                if (uiState.authError != null) {
+                val activeError = validationError ?: uiState.authError
+                if (activeError != null) {
                     Surface(
                         color = EmergencySoftBg,
                         shape = RoundedCornerShape(12.dp),
@@ -422,7 +426,7 @@ fun LoginScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                             Text(
-                                text = uiState.authError,
+                                text = activeError,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = EmergencyRed,
                                 fontWeight = FontWeight.SemiBold,
@@ -434,10 +438,11 @@ fun LoginScreen(
                 // Botón principal (Iniciar Sesión / Registrar Cuenta) en Verde Esmeralda
                 Button(
                     onClick = {
+                        val cleanEmail = email.trim()
                         if (rememberUser) {
                             prefs.edit()
                                 .putBoolean("remember_user", true)
-                                .putString("saved_email", email.trim())
+                                .putString("saved_email", cleanEmail)
                                 .apply()
                         } else {
                             prefs.edit()
@@ -447,10 +452,28 @@ fun LoginScreen(
                         }
 
                         if (isRegisterMode) {
-                            // Por ahora tu API sólo tiene login, podemos mostrar un toast o usar onRegisterSubmit adaptado
-                            onRegisterSubmit(email, confirmEmail, password, confirmPassword)
+                            val cleanConfirmEmail = confirmEmail.trim()
+                            if (cleanEmail.isEmpty() || cleanConfirmEmail.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
+                                validationError = "Por favor completa todos los campos de registro."
+                                return@Button
+                            }
+                            if (!cleanEmail.equals(cleanConfirmEmail, ignoreCase = true)) {
+                                validationError = "Los correos electrónicos no coinciden."
+                                return@Button
+                            }
+                            if (password != confirmPassword) {
+                                validationError = "Las contraseñas no coinciden."
+                                return@Button
+                            }
+                            if (password.length < 8) {
+                                validationError = "La contraseña debe tener al menos 8 caracteres."
+                                return@Button
+                            }
+                            validationError = null
+                            onRegisterSubmit(cleanEmail, cleanConfirmEmail, password, confirmPassword)
                         } else {
-                            onLoginSubmit(email, password)
+                            validationError = null
+                            onLoginSubmit(cleanEmail, password)
                         }
                     },
                     enabled = !uiState.isAuthenticating,
@@ -502,6 +525,7 @@ fun LoginScreen(
                         isRegisterMode = !isRegisterMode
                         confirmEmail = ""
                         confirmPassword = ""
+                        validationError = null
                         onClearError()
                     },
                     modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -518,6 +542,7 @@ fun LoginScreen(
                     onClick = {
                         email = "admin"
                         password = "Flora27400!"
+                        validationError = null
                         if (rememberUser) {
                             prefs.edit().putString("saved_email", email).apply()
                         }
@@ -570,11 +595,11 @@ fun LoginScreen(
                 )
                 IsoSecurityFeatureRow(
                     title = "Integridad (Anti-Spoofing)",
-                    description = "Validación de token Firebase Auth para impedir inyección de comandos en la bomba CC.",
+                    description = "Validación de token JWT de Django para proteger las operaciones de la aplicación.",
                 )
                 IsoSecurityFeatureRow(
                     title = "Disponibilidad Multi-Dispositivo",
-                    description = "Sincronización simultánea en Firebase RTDB (${uiState.connectedDevicesCount} dispositivos autorizados).",
+                    description = "Sincronización de datos mediante la API Django (${uiState.connectedDevicesCount} módulos registrados).",
                 )
             }
         }

@@ -2,17 +2,22 @@ package com.example.smartgarden
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
-import com.example.smartgarden.network.LoginRequest
-import com.example.smartgarden.network.RetrofitClient
-import com.example.smartgarden.network.TokenManager
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewModelScope
-
+import com.example.smartgarden.network.CreateUserPlantRequest
+import com.example.smartgarden.network.LoginRequest
+import com.example.smartgarden.network.PlantSearchDto
+import com.example.smartgarden.network.RetrofitClient
+import com.example.smartgarden.network.TelemetryDto
+import com.example.smartgarden.network.TokenManager
+import com.example.smartgarden.network.UserPlantDto
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class CustomPlantProfile(
     val id: String,
@@ -21,6 +26,7 @@ data class CustomPlantProfile(
     val tempMin: Float = 18f,
     val tempMax: Float = 35f,
     val minMoistureThreshold: Int = 30,
+    val moduleId: Int? = null,
 )
 
 data class PlantSearchResultItem(
@@ -29,309 +35,601 @@ data class PlantSearchResultItem(
     val scientificName: String?,
     val watering: String?,
     val sunlight: List<String>?,
-    val thumbnail: String?
+    val thumbnail: String?,
+    val tempMin: Float? = null,
+    val tempMax: Float? = null,
+    val humidityMin: Float? = null,
 )
 
-
-/**
- * Categor├¡as bot├ínicas para los filtros tipo "Chips" del Dashboard.
- */
 enum class PlantCategory(
     val displayName: String,
     val optimalTempRange: String,
     val minMoistureThreshold: Int,
 ) {
-    TODAS("Todas", "20┬░C - 35┬░C", 30),
-    TROPICALES("Tropicales", "22┬░C - 32┬░C", 35),
-    SUCULENTAS("Suculentas", "18┬░C - 35┬░C", 20),
-    AROMATICAS("Arom├íticas", "20┬░C - 30┬░C", 30),
+    TODAS("Todas", "20°C - 35°C", 30),
+    TROPICALES("Tropicales", "22°C - 32°C", 35),
+    SUCULENTAS("Suculentas", "18°C - 35°C", 20),
+    AROMATICAS("Aromáticas", "20°C - 30°C", 30),
 }
 
-/**
- * Estado global inmutable de FloraSense.
- */
 data class FloraSenseUiState(
-    // Estado de Autenticaci├│n
     val isAuthenticated: Boolean = false,
     val isAuthenticating: Boolean = false,
     val userEmail: String = "",
     val authError: String? = null,
     val isDarkMode: Boolean = false,
-    val isoSecurityProtocol: String = "ISO/IEC 27400 ÔÇó TLS 1.3 ÔÇó AES-256-GCM",
-
-    // Sincronizaci├│n Multi-Dispositivo
-    val connectedDevicesCount: Int = 2,
+    val isoSecurityProtocol: String = "Django REST • JWT • TLS",
+    val connectedDevicesCount: Int = 0,
     val isRealtimeConnected: Boolean = false,
-    val lastSyncSource: String = "Django API",
-    val syncLatencyMs: Int = 22,
-
-    // Plantas y Cultivos Din├ímicos (API Django REST + Perenual)
-    val userPlants: List<CustomPlantProfile> = listOf(
-        CustomPlantProfile(id = "todas", apodo = "Todas", tempMin = 18f, tempMax = 35f, minMoistureThreshold = 30),
-        CustomPlantProfile(id = "tropicales", apodo = "Tropicales", tempMin = 22f, tempMax = 32f, minMoistureThreshold = 35),
-        CustomPlantProfile(id = "suculentas", apodo = "Suculentas", tempMin = 18f, tempMax = 38f, minMoistureThreshold = 20),
-        CustomPlantProfile(id = "aromaticas", apodo = "Arom├íticas", tempMin = 20f, tempMax = 30f, minMoistureThreshold = 30),
-    ),
-    val activePlant: CustomPlantProfile = CustomPlantProfile(id = "todas", apodo = "Todas", tempMin = 18f, tempMax = 35f, minMoistureThreshold = 30),
+    val lastSyncSource: String = "API Django",
+    val syncLatencyMs: Int = 0,
+    val moduleIds: List<Int> = emptyList(),
+    val userPlants: List<CustomPlantProfile> = emptyList(),
+    val activePlant: CustomPlantProfile? = null,
     val isAddPlantDialogVisible: Boolean = false,
     val plantToDelete: CustomPlantProfile? = null,
     val plantSearchQuery: String = "",
     val plantSearchResults: List<PlantSearchResultItem> = emptyList(),
     val isSearchingPlants: Boolean = false,
-
-    // Filtro de categor├¡a de planta activo en el Dashboard
+    val addingPlantId: String? = null,
     val selectedCategory: PlantCategory = PlantCategory.TODAS,
-
-    // Telemetr├¡a Ambiental en Tiempo Real (Trama T,L,H)
-    val temperatureCelsius: Float = 24.0f,
+    val temperatureCelsius: Float = 24f,
     val soilMoisturePercent: Int = 50,
     val sunlightPercent: Int = 78,
-
-    // Estado de Actuadores y Dosificaci├│n (Panel de Control)
-    val isWaterPumpOn: Boolean = true,
+    val isWaterPumpOn: Boolean = false,
     val isNebulizerOn: Boolean = false,
-    val selectedDoseMl: Int = 100, // Opciones: 50, 100, 250
+    val selectedDoseMl: Int = 100,
     val isEmergencyStopActive: Boolean = false,
-    val statusLogMessage: String = "Conectando...",
+    val statusLogMessage: String = "Listo para sincronizar",
 ) {
-    // Reglas de negocio deterministas del prototipo IoT
-    val isCriticalHeat: Boolean
-        get() = temperatureCelsius > 35.0f
-
-    val isLowMoisture: Boolean
-        get() = soilMoisturePercent < 30
-
-    val hasCriticalAlert: Boolean
-        get() = isCriticalHeat || isLowMoisture || isEmergencyStopActive
+    val isCriticalHeat: Boolean get() = temperatureCelsius > 35f
+    val activeMoistureThreshold: Int
+        get() = activePlant?.minMoistureThreshold ?: selectedCategory.minMoistureThreshold
+    val isLowMoisture: Boolean get() = soilMoisturePercent < activeMoistureThreshold
+    val hasCriticalAlert: Boolean get() = isCriticalHeat || isLowMoisture || isEmergencyStopActive
 }
 
 class FloraSenseViewModel : ViewModel() {
-
     private val _uiState = MutableStateFlow(FloraSenseUiState())
     val uiState: StateFlow<FloraSenseUiState> = _uiState.asStateFlow()
+    private var telemetrySubmissionJob: Job? = null
 
     init {
-        // Verifica si ya existe una sesi├│n guardada con Django
-        val savedToken = TokenManager.getToken()
-        if (!savedToken.isNullOrEmpty()) {
-            _uiState.update {
-                it.copy(
-                    isAuthenticated = true,
-                    userEmail = "Usuario Autenticado",
-                )
-            }
+        if (!TokenManager.getToken().isNullOrEmpty()) {
+            _uiState.update { it.copy(isAuthenticated = true, userEmail = "Usuario autenticado") }
+            refreshCloudState()
         }
-
-        // Mecanismo de Polling (Sondeo autom├ítico) para simular tiempo real
         viewModelScope.launch {
             while (true) {
-                if (_uiState.value.isAuthenticated) {
-                    fetchTelemetryFromDjango()
-                }
-                delay(5000L) // Espera 5 segundos antes de la siguiente iteraci├│n
+                if (_uiState.value.isAuthenticated) fetchTelemetryFromDjango()
+                delay(15_000L)
             }
         }
     }
 
-    // ========================================================================
-    // TELEMETR├ìA (LECTURA DESDE DJANGO)
-    // ========================================================================
-    fun fetchTelemetryFromDjango() {
+    fun refreshCloudState() {
         viewModelScope.launch {
             try {
-                val response = RetrofitClient.api.getTelemetry()
-
-                // Mapea la respuesta seg├║n la estructura de tu JSON
-                // Por ejemplo, si tienes data asumiendo que contiene temperature y moisture:
-                // (Modificar seg├║n la estructura final de TelemetryResponse)
-
-                _uiState.update { current ->
-                    current.copy(
+                val modules = loadOrCreateModule()
+                val plants = RetrofitClient.api.getUserPlants().results
+                val mapped = plants.map(::toProfile)
+                _uiState.update {
+                    it.copy(
+                        userPlants = mapped,
+                        activePlant = mapped.firstOrNull { it.id == _uiState.value.activePlant?.id }
+                            ?: mapped.firstOrNull(),
+                        moduleIds = modules.map { it.id },
+                        connectedDevicesCount = modules.size,
                         isRealtimeConnected = true,
-                        // Aqu├¡ asumimos valores por defecto hasta ajustar el data class real en base al JSON de Django
-                        // temperatureCelsius = response.data.temperature ?: current.temperatureCelsius,
-                        // soilMoisturePercent = response.data.moisture ?: current.soilMoisturePercent,
-                        statusLogMessage = "Telemetr├¡a actualizada desde Django",
-                        lastSyncSource = "Django REST API"
+                        lastSyncSource = "API Django",
+                        statusLogMessage = if (modules.isEmpty()) {
+                            "No hay macetas disponibles. Pulsa 'Crear maceta' para continuar."
+                        } else if (mapped.isEmpty()) {
+                            "Maceta virtual lista para agregar una planta"
+                        } else {
+                            "Macetas sincronizadas"
+                        },
                     )
                 }
-            } catch (e: Exception) {
+            } catch (error: retrofit2.HttpException) {
                 _uiState.update {
                     it.copy(
                         isRealtimeConnected = false,
-                        statusLogMessage = "Error de sincronizaci├│n con Django: ${e.localizedMessage}"
+                        statusLogMessage = "No se pudieron sincronizar las macetas: ${parseHttpError(error)}",
                     )
                 }
+            } catch (error: Exception) {
+                markApiError("No se pudieron sincronizar las macetas", error)
             }
         }
     }
 
-    // ========================================================================
-    // PASO 2: AUTENTICACI├ôN REAL CON API REST EN DJANGO
-    // ========================================================================
+    fun ensureModuleAvailable() {
+        viewModelScope.launch {
+            try {
+                loadOrCreateModule()
+                refreshCloudState()
+            } catch (error: retrofit2.HttpException) {
+                _uiState.update {
+                    it.copy(
+                        isRealtimeConnected = false,
+                        statusLogMessage = "No se pudo crear la maceta virtual: ${parseHttpError(error)}",
+                    )
+                }
+            } catch (error: Exception) {
+                markApiError("No se pudo crear la maceta virtual", error)
+            }
+        }
+    }
+
+    private suspend fun loadOrCreateModule(): List<com.example.smartgarden.network.GardenModuleDto> {
+        var modules = RetrofitClient.api.getModules().results
+        if (modules.isEmpty()) {
+            modules = listOf(
+                RetrofitClient.api.createModule(
+                    com.example.smartgarden.network.CreateModuleRequest(
+                        macAddress = generateVirtualMacAddress(),
+                        nombre = "Maceta virtual 1",
+                    )
+                )
+            )
+        }
+        return modules
+    }
+
+    private fun generateVirtualMacAddress(): String {
+        val bytes = UUID.randomUUID().toString()
+            .replace("-", "")
+            .takeLast(10)
+            .chunked(2)
+        return "02:${bytes.joinToString(":")}".uppercase()
+    }
+
+    fun fetchTelemetryFromDjango() {
+        viewModelScope.launch {
+            try {
+                val startedAt = System.currentTimeMillis()
+                val moduleId = _uiState.value.activePlant?.moduleId
+                val reading = RetrofitClient.api.getTelemetry(moduleId = moduleId, pageSize = 1).results.firstOrNull()
+                if (reading == null) {
+                    _uiState.update {
+                        it.copy(isRealtimeConnected = true, statusLogMessage = "Sin lecturas de telemetría todavía")
+                    }
+                    return@launch
+                }
+                applyTelemetry(reading, (System.currentTimeMillis() - startedAt).toInt())
+            } catch (error: Exception) {
+                markApiError("No se pudo actualizar la telemetría", error)
+            }
+        }
+    }
+
     fun loginWithDjango(
         username: String,
         password: String,
         onLoginSuccess: () -> Unit,
-        onError: (String) -> Unit
+        onError: (String) -> Unit,
     ) {
         val cleanUsername = username.trim()
-        if (cleanUsername.isEmpty()) {
-            _uiState.update {
-                it.copy(authError = "Ingresa un usuario o correo electr├│nico v├ílido.")
-            }
+        if (cleanUsername.isEmpty() || password.length < 6) {
+            val message = "Ingresa un usuario válido y una contraseña de al menos 6 caracteres."
+            _uiState.update { it.copy(authError = message) }
+            onError(message)
             return
         }
-        if (password.length < 6) {
-            _uiState.update {
-                it.copy(authError = "Pol├¡tica ISO 27400: La contrase├▒a requiere m├¡nimo 6 caracteres.")
-            }
-            return
-        }
-
-        _uiState.update {
-            it.copy(isAuthenticating = true, authError = null)
-        }
-
+        _uiState.update { it.copy(isAuthenticating = true, authError = null) }
         viewModelScope.launch {
             try {
-                // Hacemos el llamado a Retrofit
-                val request = LoginRequest(username = cleanUsername, password = password)
-                val response = RetrofitClient.api.login(request)
-                
-                // Extraer el token dependiendo de si Django usa "token" o "access" (Simple JWT)
-                val actualToken = response.token ?: response.access
-                
-                if (actualToken != null) {
-                    // Guardamos el token de forma segura
-                    TokenManager.saveToken(actualToken)
-                    
+                val response = RetrofitClient.api.login(LoginRequest(cleanUsername, password))
+                val accessToken = response.access ?: response.token
+                    ?: error("El servidor no devolvió un token de acceso.")
+                TokenManager.saveToken(accessToken)
+                _uiState.update {
+                    it.copy(
+                        isAuthenticated = true,
+                        isAuthenticating = false,
+                        userEmail = cleanUsername,
+                        statusLogMessage = "Sesión conectada con Django",
+                    )
+                }
+                refreshCloudState()
+                onLoginSuccess()
+            } catch (error: Exception) {
+                val message = "No se pudo iniciar sesión. Revisa tus credenciales y conexión."
+                _uiState.update { it.copy(isAuthenticated = false, isAuthenticating = false, authError = message) }
+                onError(message)
+            }
+        }
+    }
+
+    fun registerWithDjango(
+        email: String,
+        password: String,
+        passwordConfirmation: String,
+        onRegisterSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val cleanUsername = email.trim()
+        if (cleanUsername.isEmpty() || password.length < 8 || password != passwordConfirmation) {
+            val message = "Revisa el usuario, la contraseña y su confirmación."
+            _uiState.update { it.copy(authError = message) }
+            onError(message)
+            return
+        }
+        _uiState.update { it.copy(isAuthenticating = true, authError = null) }
+        viewModelScope.launch {
+            try {
+                val req = com.example.smartgarden.network.RegisterRequest(
+                    username = cleanUsername,
+                    email = cleanUsername,
+                    password = password,
+                    passwordConfirmation = passwordConfirmation,
+                )
+                val response = RetrofitClient.api.register(req)
+                val token = response.access ?: response.token
+                if (!token.isNullOrEmpty()) {
+                    TokenManager.saveToken(token)
                     _uiState.update {
                         it.copy(
                             isAuthenticated = true,
                             isAuthenticating = false,
                             userEmail = cleanUsername,
-                            authError = null,
-                            statusLogMessage = "Sesi├│n Django activa ($cleanUsername)",
+                            statusLogMessage = "Cuenta registrada e iniciada exitosamente",
                         )
                     }
-                    onLoginSuccess()
+                    refreshCloudState()
+                    onRegisterSuccess()
                 } else {
-                    _uiState.update {
-                        it.copy(
-                            isAuthenticating = false,
-                            authError = "El servidor no devolvi├│ un token de acceso v├ílido."
-                        )
-                    }
+                    val message = "La API no devolvió los tokens de la cuenta registrada."
+                    _uiState.update { it.copy(isAuthenticated = false, isAuthenticating = false, authError = message) }
+                    onError(message)
                 }
-            } catch (e: Exception) {
-                // Manejo de errores de red o credenciales
-                val errorMessage = "Error en el servidor: ${e.localizedMessage}"
-                _uiState.update {
-                    it.copy(
-                        isAuthenticated = false,
-                        isAuthenticating = false,
-                        authError = errorMessage
-                    )
-                }
-                onError(errorMessage)
+            } catch (error: retrofit2.HttpException) {
+                val message = parseHttpError(error)
+                _uiState.update { it.copy(isAuthenticated = false, isAuthenticating = false, authError = message) }
+                onError(message)
+            } catch (error: Exception) {
+                val message = "Error al conectar con la API: ${error.message ?: "Sin conexión a internet"}"
+                _uiState.update { it.copy(isAuthenticated = false, isAuthenticating = false, authError = message) }
+                onError(message)
             }
         }
     }
 
-    fun clearAuthError() {
-        _uiState.update { it.copy(authError = null) }
+    private fun parseHttpError(error: retrofit2.HttpException): String {
+        return try {
+            val errorJson = error.response()?.errorBody()?.string()
+            if (!errorJson.isNullOrEmpty()) {
+                val jsonElement = com.google.gson.JsonParser.parseString(errorJson)
+                if (jsonElement.isJsonObject) {
+                    val obj = jsonElement.asJsonObject
+                    val messages = mutableListOf<String>()
+                    obj.entrySet().forEach { (key, value) ->
+                        val fieldName = when (key) {
+                            "module" -> "Módulo"
+                            "api_species_id" -> "Especie"
+                            "apodo" -> "Apodo"
+                            "humedad_optima" -> "Humedad"
+                            "temp_min" -> "Temp. Mínima"
+                            "temp_max" -> "Temp. Máxima"
+                            "detail" -> ""
+                            "non_field_errors" -> ""
+                            else -> key
+                        }
+                        val strValue = if (value.isJsonArray) {
+                            value.asJsonArray.joinToString { it.asString }
+                        } else if (value.isJsonPrimitive) {
+                            value.asString
+                        } else {
+                            value.toString()
+                        }
+                        if (fieldName.isEmpty()) {
+                            messages.add(strValue)
+                        } else {
+                            messages.add("$fieldName: $strValue")
+                        }
+                    }
+                    if (messages.isNotEmpty()) {
+                        return messages.joinToString(" • ")
+                    }
+                }
+            }
+            "Error de solicitud (Código ${error.code()})"
+        } catch (_: Exception) {
+            "Error de servidor (${error.code()})"
+        }
     }
+
+    fun clearAuthError() = _uiState.update { it.copy(authError = null) }
 
     fun logout(onLoggedOut: () -> Unit) {
         TokenManager.clearToken()
-        _uiState.update {
-            it.copy(
-                isAuthenticated = false,
-                userEmail = "",
-                authError = null,
-                statusLogMessage = "Sesi├│n cerrada",
-            )
-        }
+        _uiState.value = FloraSenseUiState(statusLogMessage = "Sesión cerrada")
         onLoggedOut()
     }
 
-    // ========================================================================
-    // CONTROL DE ACTUADORES (ESCRITURA) - PENDIENTE DE CONECTAR A DJANGO
-    // ========================================================================
     fun setWaterPumpState(enabled: Boolean) {
-        if (_uiState.value.isEmergencyStopActive) return
-        // TODO: Implementar POST a Django
+        if (!_uiState.value.isEmergencyStopActive) {
+            _uiState.update { it.copy(isWaterPumpOn = enabled, statusLogMessage = "Bomba actualizada localmente") }
+        }
     }
 
     fun setNebulizerState(enabled: Boolean) {
-        if (_uiState.value.isEmergencyStopActive) return
-        // TODO: Implementar POST a Django
+        if (!_uiState.value.isEmergencyStopActive) {
+            _uiState.update { it.copy(isNebulizerOn = enabled, statusLogMessage = "Nebulizador actualizado localmente") }
+        }
     }
 
     fun selectDoseMl(doseMl: Int) {
-        if (_uiState.value.isEmergencyStopActive) return
-        // TODO: Implementar POST a Django
+        if (!_uiState.value.isEmergencyStopActive) _uiState.update { it.copy(selectedDoseMl = doseMl) }
     }
 
     fun triggerEmergencyStop() {
-        // TODO: Implementar POST a Django
+        _uiState.update {
+            it.copy(
+                isEmergencyStopActive = !it.isEmergencyStopActive,
+                isWaterPumpOn = false,
+                isNebulizerOn = false,
+                statusLogMessage = if (!it.isEmergencyStopActive) "Parada de emergencia local activa" else "Parada de emergencia restablecida",
+            )
+        }
     }
 
     fun applyIrrigationDose() {
-        if (_uiState.value.isEmergencyStopActive) return
-        // TODO: Implementar POST a Django
-    }
-
-    fun setDarkMode(enabled: Boolean) {
-        _uiState.update { current ->
-            current.copy(isDarkMode = enabled)
+        if (!_uiState.value.isEmergencyStopActive) {
+            _uiState.update { it.copy(statusLogMessage = "Riego de ${it.selectedDoseMl} ml preparado localmente") }
         }
     }
+
+    fun setDarkMode(enabled: Boolean) = _uiState.update { it.copy(isDarkMode = enabled) }
 
     fun toggleDarkMode(context: Context) {
-        val newMode = !_uiState.value.isDarkMode
+        val enabled = !_uiState.value.isDarkMode
         context.getSharedPreferences("smartgarden_prefs", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("is_dark_mode", newMode)
-            .apply()
-        _uiState.update { current ->
-            current.copy(isDarkMode = newMode)
-        }
+            .edit().putBoolean("is_dark_mode", enabled).apply()
+        setDarkMode(enabled)
     }
 
-    // ========================================================================
-    // FUNCIONES COMPLEMENTARIAS DEL DASHBOARD
-    // ========================================================================
     fun selectPlantCategory(category: PlantCategory) {
-        _uiState.update { current ->
-            current.copy(
-                selectedCategory = category,
-                statusLogMessage = "Perfil bot├ínico: ${category.displayName} (├ôptimo ${category.optimalTempRange})",
-            )
-        }
+        _uiState.update { it.copy(selectedCategory = category) }
     }
 
-    fun updateSimulatedTelemetry(
-        temperature: Float = _uiState.value.temperatureCelsius,
-        moisture: Int = _uiState.value.soilMoisturePercent,
-        sunlight: Int = _uiState.value.sunlightPercent,
-    ) {
-        // TODO: Eliminar o refactorizar si se va a reemplazar por datos 100% reales de Django
-        val clampedMoisture = moisture.coerceIn(0, 100)
-        val clampedSunlight = sunlight.coerceIn(0, 100)
-
-        _uiState.update { current ->
-            current.copy(
-                temperatureCelsius = temperature,
-                soilMoisturePercent = clampedMoisture,
-                sunlightPercent = clampedSunlight
+    fun selectActivePlant(plant: CustomPlantProfile) {
+        _uiState.update {
+            it.copy(
+                activePlant = plant,
+                statusLogMessage = "${plant.apodo} seleccionada",
             )
+        }
+        fetchTelemetryFromDjango()
+    }
+
+    fun updateSimulatedTelemetry(temperature: Float = _uiState.value.temperatureCelsius, moisture: Int = _uiState.value.soilMoisturePercent, sunlight: Int = _uiState.value.sunlightPercent) {
+        val normalizedMoisture = moisture.coerceIn(0, 100)
+        val normalizedSunlight = sunlight.coerceIn(0, 100)
+        _uiState.update {
+            it.copy(
+                temperatureCelsius = temperature,
+                soilMoisturePercent = normalizedMoisture,
+                sunlightPercent = normalizedSunlight,
+                statusLogMessage = "Guardando lectura de ${it.activePlant?.apodo ?: "la maceta"}...",
+            )
+        }
+        telemetrySubmissionJob?.cancel()
+        telemetrySubmissionJob = viewModelScope.launch {
+            delay(400L)
+            val plant = _uiState.value.activePlant
+            val moduleId = plant?.moduleId
+            if (moduleId == null) {
+                _uiState.update { it.copy(statusLogMessage = "Selecciona una maceta con módulo para guardar la lectura") }
+                return@launch
+            }
+            try {
+                val reading = RetrofitClient.api.submitTelemetry(
+                    moduleId = moduleId,
+                    request = com.example.smartgarden.network.TelemetryRequest(
+                        temperatura = _uiState.value.temperatureCelsius,
+                        humedad = _uiState.value.soilMoisturePercent.toFloat(),
+                        luz = _uiState.value.sunlightPercent.toFloat(),
+                    ),
+                )
+                applyTelemetry(reading, _uiState.value.syncLatencyMs)
+                _uiState.update { it.copy(statusLogMessage = "Lectura guardada en la API para ${plant.apodo}") }
+            } catch (error: Exception) {
+                markApiError("No se pudo guardar la lectura en la API", error)
+            }
         }
     }
 
     fun simulateSecondDeviceSync() {
-        if (_uiState.value.isEmergencyStopActive) return
-        // TODO: Eliminar o refactorizar
+        _uiState.update { it.copy(statusLogMessage = "La API Django es la fuente compartida; actualiza para consultar cambios") }
+        refreshCloudState()
+        fetchTelemetryFromDjango()
+    }
+
+    fun searchPlants(query: String) {
+        _uiState.update {
+            it.copy(
+                plantSearchQuery = query,
+                isSearchingPlants = query.isNotBlank(),
+                statusLogMessage = if (query.isBlank()) "Búsqueda limpiada" else "Buscando especies en el catálogo...",
+            )
+        }
+        if (query.isBlank()) {
+            _uiState.update { it.copy(plantSearchResults = emptyList(), isSearchingPlants = false) }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.api.searchPlants(query.trim())
+                _uiState.update {
+                    it.copy(
+                        plantSearchResults = response.results.map(::toSearchItem),
+                        isSearchingPlants = false,
+                        statusLogMessage = if (response.results.isEmpty()) {
+                            "No encontramos especies para esa búsqueda"
+                        } else {
+                            "${response.results.size} especies encontradas"
+                        },
+                    )
+                }
+            } catch (error: Exception) {
+                markApiError("No se pudo consultar el catálogo botánico", error)
+                _uiState.update { it.copy(isSearchingPlants = false, plantSearchResults = emptyList()) }
+            }
+        }
+    }
+
+    fun addPlant(result: PlantSearchResultItem, preferredModuleId: Int? = null) {
+        _uiState.update { it.copy(addingPlantId = result.apiSpeciesId) }
+        viewModelScope.launch {
+            try {
+                val plantName = (result.commonName ?: result.scientificName ?: result.apiSpeciesId).ifBlank { "Planta" }
+                val speciesId = result.apiSpeciesId.ifBlank { "1" }
+
+                // 1. Obtener módulos y plantas actuales para identificar espacio libre
+                val modules = try { RetrofitClient.api.getModules().results } catch (_: Exception) { emptyList() }
+                val existingPlants = try { RetrofitClient.api.getUserPlants().results } catch (_: Exception) { emptyList() }
+
+                val assignedModuleIds = existingPlants.map { it.module }.toSet()
+                val freeModule = modules.firstOrNull { it.id !in assignedModuleIds || it.plant == null }
+
+                val targetModuleId: Int? = preferredModuleId ?: freeModule?.id
+
+                var createSuccess = false
+                try {
+                    RetrofitClient.api.createUserPlant(
+                        CreateUserPlantRequest(
+                            module = targetModuleId,
+                            apiSpeciesId = speciesId,
+                            apodo = plantName,
+                            tempMin = result.tempMin ?: 18f,
+                            tempMax = result.tempMax ?: 35f,
+                            optimalHumidity = result.humidityMin ?: 60f,
+                        )
+                    )
+                    createSuccess = true
+                } catch (e: retrofit2.HttpException) {
+                    if (e.code() == 400) {
+                        // Intento A: Probar con module = null (sin vincular inmediatamente a un módulo ocupado)
+                        try {
+                            RetrofitClient.api.createUserPlant(
+                                CreateUserPlantRequest(
+                                    module = null,
+                                    apiSpeciesId = speciesId,
+                                    apodo = plantName,
+                                    tempMin = result.tempMin ?: 18f,
+                                    tempMax = result.tempMax ?: 35f,
+                                    optimalHumidity = result.humidityMin ?: 60f,
+                                )
+                            )
+                            createSuccess = true
+                        } catch (e2: retrofit2.HttpException) {
+                            // Intento B: Si requiere módulo y todos están ocupados, reemplaza la planta vieja del módulo objetivo
+                            val moduleToOverwrite = targetModuleId ?: modules.firstOrNull()?.id
+                            if (moduleToOverwrite != null) {
+                                val oldPlant = existingPlants.firstOrNull { it.module == moduleToOverwrite }
+                                if (oldPlant != null) {
+                                    RetrofitClient.api.deleteUserPlant(oldPlant.id)
+                                }
+                                RetrofitClient.api.createUserPlant(
+                                    CreateUserPlantRequest(
+                                        module = moduleToOverwrite,
+                                        apiSpeciesId = speciesId,
+                                        apodo = plantName,
+                                        tempMin = result.tempMin ?: 18f,
+                                        tempMax = result.tempMax ?: 35f,
+                                        optimalHumidity = result.humidityMin ?: 60f,
+                                    )
+                                )
+                                createSuccess = true
+                            } else {
+                                throw e2
+                            }
+                        }
+                    } else {
+                        throw e
+                    }
+                }
+
+                if (createSuccess) {
+                    _uiState.update {
+                        it.copy(
+                            plantSearchQuery = "",
+                            plantSearchResults = emptyList(),
+                            isSearchingPlants = false,
+                            statusLogMessage = "¡Planta '$plantName' agregada exitosamente a tu jardín!",
+                        )
+                    }
+                    refreshCloudState()
+                }
+            } catch (error: retrofit2.HttpException) {
+                val details = parseHttpError(error)
+                _uiState.update {
+                    it.copy(statusLogMessage = "No se pudo guardar la planta: $details")
+                }
+            } catch (error: Exception) {
+                markApiError("No se pudo guardar la planta", error)
+            } finally {
+                _uiState.update { it.copy(addingPlantId = null) }
+            }
+        }
+    }
+
+    fun deletePlant(plant: CustomPlantProfile) {
+        val id = plant.id.toIntOrNull() ?: return
+        viewModelScope.launch {
+            try {
+                RetrofitClient.api.deleteUserPlant(id)
+                refreshCloudState()
+            } catch (error: Exception) {
+                markApiError("No se pudo eliminar la planta", error)
+            }
+        }
+    }
+
+    private fun applyTelemetry(reading: TelemetryDto, latency: Int) {
+        _uiState.update {
+            it.copy(
+                temperatureCelsius = reading.temperatura ?: it.temperatureCelsius,
+                soilMoisturePercent = (reading.humedad ?: it.soilMoisturePercent.toFloat()).toInt().coerceIn(0, 100),
+                sunlightPercent = (reading.luz ?: it.sunlightPercent.toFloat()).toInt().coerceIn(0, 100),
+                isRealtimeConnected = true,
+                syncLatencyMs = latency,
+                lastSyncSource = "API Django",
+                statusLogMessage = "Telemetría actualizada",
+            )
+        }
+    }
+
+    private fun toProfile(plant: UserPlantDto) = CustomPlantProfile(
+        id = plant.id.toString(),
+        apodo = plant.apodo,
+        commonName = plant.apodo,
+        tempMin = plant.tempMin,
+        tempMax = plant.tempMax,
+        minMoistureThreshold = plant.optimalHumidity.toInt(),
+        moduleId = plant.module,
+    )
+
+    private fun toSearchItem(plant: PlantSearchDto) = PlantSearchResultItem(
+        apiSpeciesId = plant.apiSpeciesId,
+        commonName = plant.commonName,
+        scientificName = plant.scientificName,
+        watering = plant.watering,
+        sunlight = plant.sunlight,
+        thumbnail = plant.thumbnail,
+        tempMin = plant.tempMin,
+        tempMax = plant.tempMax,
+        humidityMin = plant.humidityMin,
+    )
+
+    private fun markApiError(prefix: String, error: Exception) {
+        _uiState.update {
+            it.copy(
+                isRealtimeConnected = false,
+                statusLogMessage = "$prefix: ${error.message ?: "error de red"}",
+            )
+        }
     }
 }

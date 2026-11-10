@@ -61,7 +61,7 @@ fun AppNavigation(
     }
 
     FloraSenseTheme(isDarkMode = uiState.isDarkMode) {
-        // Redirección automática al Dashboard si la sesión Firebase Auth está activa y "Recordar usuario" está habilitado
+        // Redirección automática al Dashboard si existe una sesión JWT válida.
         LaunchedEffect(uiState.isAuthenticated) {
             if (uiState.isAuthenticated && isRememberUser) {
                 navController.navigate(FloraSenseRoute.DASHBOARD.route) {
@@ -70,9 +70,9 @@ fun AppNavigation(
             }
         }
 
-        // Monitoreo en tiempo real de temperatura y humedad crítica para notificaciones push locales
+        // Alertas locales mientras la aplicación está abierta.
         LaunchedEffect(uiState.isRealtimeConnected, uiState.temperatureCelsius, uiState.soilMoisturePercent, uiState.selectedCategory) {
-            // Solo evaluar notificaciones cuando la conexión con Firebase RTDB esté activa y sincronizada
+            // Solo evaluar alertas cuando la última lectura de la API fue válida.
             if (uiState.isRealtimeConnected) {
                 if (uiState.isCriticalHeat) {
                     NotificationHelper.sendTemperatureAlert(context, uiState.temperatureCelsius)
@@ -137,9 +137,17 @@ fun AppNavigation(
                             )
                         },
                         onRegisterSubmit = { email, confirmEmail, password, confirmPassword ->
-                            // TODO: Implementar registro con Django cuando esté disponible en la API.
-                            // Por el momento se reutiliza login o puedes mostrar un mensaje:
-                            viewModel.clearAuthError()
+                            viewModel.registerWithDjango(
+                                email = email,
+                                password = password,
+                                passwordConfirmation = confirmPassword,
+                                onRegisterSuccess = {
+                                    navController.navigate(FloraSenseRoute.DASHBOARD.route) {
+                                        popUpTo(FloraSenseRoute.LOGIN.route) { inclusive = true }
+                                    }
+                                },
+                                onError = { /* El ViewModel ya maneja el estado de error en uiState.authError */ },
+                            )
                         },
                         onToggleDarkMode = { viewModel.toggleDarkMode(context) },
                     )
@@ -150,6 +158,13 @@ fun AppNavigation(
                     DashboardScreen(
                         uiState = uiState,
                         onSelectCategory = viewModel::selectPlantCategory,
+                        onSelectPlant = viewModel::selectActivePlant,
+                        onEnsureModule = viewModel::ensureModuleAvailable,
+                        onSearchPlants = viewModel::searchPlants,
+                        onAddPlant = { result ->
+                            viewModel.addPlant(result)
+                        },
+                        onDeletePlant = viewModel::deletePlant,
                         onUpdateSimulatedTelemetry = viewModel::updateSimulatedTelemetry,
                         onSimulateSecondDevice = viewModel::simulateSecondDeviceSync,
                         onNavigateToControls = {

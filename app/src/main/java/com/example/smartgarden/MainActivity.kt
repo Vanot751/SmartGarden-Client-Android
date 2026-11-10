@@ -243,6 +243,11 @@ fun FloraSenseAppPreview() {
         DashboardScreen(
             uiState = FloraSenseUiState(),
             onSelectCategory = {},
+            onSelectPlant = {},
+            onEnsureModule = {},
+            onSearchPlants = {},
+            onAddPlant = {},
+            onDeletePlant = {},
             onUpdateSimulatedTelemetry = { _, _, _ -> },
             onSimulateSecondDevice = {},
             onNavigateToControls = {},
