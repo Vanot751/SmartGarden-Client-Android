@@ -6,13 +6,12 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
-    // Ahora que tu backend está corriendo en 0.0.0.0:8000, podemos usar
-    // directamente la IP de tu red local que sí es visible para el emulador.
-    private const val BASE_URL = "http://192.168.1.115:8000/api/"
+    // Conexión a la API desplegada en Vercel (HTTPS)
+    private const val BASE_URL = "https://smart-garden-api-django.vercel.app/api/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        // Nivel BODY para ver las peticiones y respuestas en el Logcat
-        level = HttpLoggingInterceptor.Level.BODY
+        // Nivel NONE para seguridad en producción (evita filtrar tokens JWT en Logcat)
+        level = HttpLoggingInterceptor.Level.NONE
     }
 
     private val okHttpClient = OkHttpClient.Builder()
