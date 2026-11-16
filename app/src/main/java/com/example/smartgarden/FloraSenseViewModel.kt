@@ -476,16 +476,17 @@ class FloraSenseViewModel : ViewModel() {
                 statusLogMessage = "Guardando lectura de ${it.activePlant?.apodo ?: "la maceta"}...",
             )
         }
+        // 1. Envío instantáneo continuo a Firebase (< 30ms, sin encolamiento)
+        FirebaseRealtimeClient.syncTelemetry(
+            temperatura = temperature,
+            humedad = normalizedMoisture.toFloat(),
+            luz = normalizedSunlight.toFloat()
+        )
+
+        // 2. Persistencia en Django con debounce (solo al soltar o pausar el control)
         telemetrySubmissionJob?.cancel()
         telemetrySubmissionJob = viewModelScope.launch {
-            // Sincronización instantánea a Firebase Realtime Database (< 50ms)
-            FirebaseRealtimeClient.syncTelemetry(
-                temperatura = temperature,
-                humedad = normalizedMoisture.toFloat(),
-                luz = normalizedSunlight.toFloat()
-            )
-
-            delay(120L)
+            delay(600L)
             val plant = _uiState.value.activePlant
             val moduleId = plant?.moduleId
             if (moduleId == null) {
