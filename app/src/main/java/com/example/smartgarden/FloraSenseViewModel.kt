@@ -95,6 +95,8 @@ class FloraSenseViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(FloraSenseUiState())
     val uiState: StateFlow<FloraSenseUiState> = _uiState.asStateFlow()
     private var telemetrySubmissionJob: Job? = null
+    @Volatile
+    private var lastUserEditTimestamp: Long = 0L
 
     init {
         val savedToken = TokenManager.getToken()
@@ -220,6 +222,9 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     fun fetchTelemetryFromDjango() {
+        if ((System.currentTimeMillis() - lastUserEditTimestamp) < 3500L) {
+            return
+        }
         viewModelScope.launch {
             try {
                 val startedAt = System.currentTimeMillis()
@@ -466,6 +471,7 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     fun updateSimulatedTelemetry(temperature: Float = _uiState.value.temperatureCelsius, moisture: Int = _uiState.value.soilMoisturePercent, sunlight: Int = _uiState.value.sunlightPercent) {
+        lastUserEditTimestamp = System.currentTimeMillis()
         val normalizedMoisture = moisture.coerceIn(0, 100)
         val normalizedSunlight = sunlight.coerceIn(0, 100)
         _uiState.update {
@@ -486,7 +492,7 @@ class FloraSenseViewModel : ViewModel() {
         // 2. Persistencia en Django con debounce (solo al soltar o pausar el control)
         telemetrySubmissionJob?.cancel()
         telemetrySubmissionJob = viewModelScope.launch {
-            delay(600L)
+            delay(800L)
             val plant = _uiState.value.activePlant
             val moduleId = plant?.moduleId
             if (moduleId == null) {
@@ -494,16 +500,25 @@ class FloraSenseViewModel : ViewModel() {
                 return@launch
             }
             try {
+                val currentTemp = _uiState.value.temperatureCelsius
+                val currentMoisture = _uiState.value.soilMoisturePercent.toFloat()
+                val currentSunlight = _uiState.value.sunlightPercent.toFloat()
                 val reading = RetrofitClient.api.submitTelemetry(
                     moduleId = moduleId,
                     request = com.example.smartgarden.network.TelemetryRequest(
-                        temperatura = _uiState.value.temperatureCelsius,
-                        humedad = _uiState.value.soilMoisturePercent.toFloat(),
-                        luz = _uiState.value.sunlightPercent.toFloat(),
+                        temperatura = currentTemp,
+                        humedad = currentMoisture,
+                        luz = currentSunlight,
                     ),
                 )
-                applyTelemetry(reading, _uiState.value.syncLatencyMs)
-                _uiState.update { it.copy(statusLogMessage = "Lectura guardada en la API para ${plant.apodo}") }
+                OfflineCacheManager.saveTelemetry(reading)
+                _uiState.update {
+                    it.copy(
+                        statusLogMessage = "Lectura guardada en la API para ${plant.apodo}",
+                        lastSyncSource = "API Django",
+                        isRealtimeConnected = true
+                    )
+                }
             } catch (error: Exception) {
                 markApiError("No se pudo guardar la lectura en la API", error)
             }
@@ -684,15 +699,16 @@ class FloraSenseViewModel : ViewModel() {
 
     private fun applyTelemetry(reading: TelemetryDto, latency: Int) {
         OfflineCacheManager.saveTelemetry(reading)
+        val isUserRecentlyInteracting = (System.currentTimeMillis() - lastUserEditTimestamp) < 3500L
         _uiState.update {
             it.copy(
-                temperatureCelsius = reading.temperatura ?: it.temperatureCelsius,
-                soilMoisturePercent = (reading.humedad ?: it.soilMoisturePercent.toFloat()).toInt().coerceIn(0, 100),
-                sunlightPercent = (reading.luz ?: it.sunlightPercent.toFloat()).toInt().coerceIn(0, 100),
+                temperatureCelsius = if (isUserRecentlyInteracting) it.temperatureCelsius else (reading.temperatura ?: it.temperatureCelsius),
+                soilMoisturePercent = if (isUserRecentlyInteracting) it.soilMoisturePercent else ((reading.humedad ?: it.soilMoisturePercent.toFloat()).toInt().coerceIn(0, 100)),
+                sunlightPercent = if (isUserRecentlyInteracting) it.sunlightPercent else ((reading.luz ?: it.sunlightPercent.toFloat()).toInt().coerceIn(0, 100)),
                 isRealtimeConnected = true,
                 syncLatencyMs = latency,
                 lastSyncSource = "API Django",
-                statusLogMessage = "Telemetría actualizada",
+                statusLogMessage = if (isUserRecentlyInteracting) it.statusLogMessage else "Telemetría actualizada",
             )
         }
     }
