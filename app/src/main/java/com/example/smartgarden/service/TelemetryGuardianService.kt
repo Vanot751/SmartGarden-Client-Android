@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.smartgarden.MainActivity
@@ -125,13 +126,14 @@ class TelemetryGuardianService : Service() {
             while (isActive) {
                 val username = TokenManager.getUsername()
                 if (username.isNullOrBlank()) {
-                    // Si no hay usuario autenticado en la app, esperar a que inicie sesión
+                    Log.d("TelemetryGuardian", "No hay usuario autenticado aún. Esperando...")
                     delay(3000L)
                     continue
                 }
 
                 val userKey = FirebaseRealtimeClient.sanitizeUserKey(username)
                 val rtdbUrl = FirebaseRealtimeClient.getTelemetryUrl(userKey)
+                Log.d("TelemetryGuardian", "Iniciando escucha SSE para usuario '$username' en: $rtdbUrl")
 
                 try {
                     val request = Request.Builder()
@@ -140,30 +142,34 @@ class TelemetryGuardianService : Service() {
                         .build()
 
                     okHttpClient.newCall(request).execute().use { response ->
+                        Log.d("TelemetryGuardian", "Conexión SSE establecida con código HTTP: ${response.code}")
                         if (!response.isSuccessful) {
+                            Log.w("TelemetryGuardian", "Error en respuesta SSE: ${response.code} ${response.message}")
                             delay(5000L)
                             return@use
                         }
 
                         val source = response.body?.source() ?: return@use
                         while (isActive && !source.exhausted()) {
-                            // Si el usuario cerró sesión o cambió de cuenta, romper este stream para reiniciar con el nuevo
                             val activeUser = TokenManager.getUsername()
                             if (activeUser != username) {
+                                Log.i("TelemetryGuardian", "El usuario cambió a '$activeUser'. Reiniciando stream...")
                                 break
                             }
 
                             val line = source.readUtf8Line() ?: break
                             if (line.startsWith("data: ")) {
                                 val rawJson = line.removePrefix("data: ").trim()
+                                Log.d("TelemetryGuardian", "Línea SSE recibida: $rawJson")
                                 if (rawJson.isNotEmpty() && rawJson != "null") {
                                     handleFirebasePayload(rawJson)
                                 }
                             }
                         }
                     }
-                } catch (_: Exception) {
-                    delay(4000L) // Reintento automático en caso de pérdida de conexión
+                } catch (e: Exception) {
+                    Log.e("TelemetryGuardian", "Excepción en stream SSE: ${e.message}", e)
+                    delay(4000L)
                 }
             }
         }
@@ -191,17 +197,21 @@ class TelemetryGuardianService : Service() {
                 if (path == "/planta") plantName = dataElem.asString
             }
 
+            Log.d("TelemetryGuardian", "Payload procesado: temp=$temp, hum=$hum, planta=$plantName")
             val now = System.currentTimeMillis()
 
             // Disparo de Alerta de Temperatura Crítica (> 35°C)
             if (temp != null && temp > 35.0f) {
                 if (now - lastTempAlertTimestamp > ALERT_COOLDOWN_MS) {
                     lastTempAlertTimestamp = now
+                    Log.i("TelemetryGuardian", "¡ALERTA TÉRMICA DISPARADA! $temp°C en $plantName")
                     NotificationHelper.sendTemperatureAlert(
                         context = applicationContext,
                         plantName = plantName,
                         tempCelsius = temp
                     )
+                } else {
+                    Log.d("TelemetryGuardian", "Alerta térmica omitida por cooldown")
                 }
             }
 
@@ -209,21 +219,44 @@ class TelemetryGuardianService : Service() {
             if (hum != null && hum < 30.0f) {
                 if (now - lastMoistureAlertTimestamp > ALERT_COOLDOWN_MS) {
                     lastMoistureAlertTimestamp = now
+                    Log.i("TelemetryGuardian", "¡ALERTA HÍDRICA DISPARADA! $hum% en $plantName")
                     NotificationHelper.sendMoistureAlert(
                         context = applicationContext,
                         plantName = plantName,
                         moisturePercent = hum.toInt(),
                         minThresholdPercent = 30
                     )
+                } else {
+                    Log.d("TelemetryGuardian", "Alerta hídrica omitida por cooldown")
                 }
             }
-        } catch (_: Exception) {
-            // Payload omitido de manera segura
+        } catch (e: Exception) {
+            Log.e("TelemetryGuardian", "Error parseando payload: ${e.message}", e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.i("TelemetryGuardian", "onTaskRemoved: app cerrada en Recientes. Reprogramando guardián...")
+        val restartServiceIntent = Intent(applicationContext, TelemetryGuardianService::class.java).also {
+            it.setPackage(packageName)
+        }
+        val restartServicePendingIntent = PendingIntent.getService(
+            applicationContext,
+            1,
+            restartServiceIntent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmService = getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
+        alarmService?.set(
+            android.app.AlarmManager.ELAPSED_REALTIME,
+            android.os.SystemClock.elapsedRealtime() + 1000,
+            restartServicePendingIntent
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

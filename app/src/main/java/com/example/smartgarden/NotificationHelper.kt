@@ -18,8 +18,26 @@ object NotificationHelper {
     private const val NOTIFICATION_ID_TEMP = 1001
     private const val NOTIFICATION_ID_MOISTURE = 1002
 
+    private fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            if (manager != null && manager.getNotificationChannel(MainActivity.CHANNEL_ID) == null) {
+                val channel = android.app.NotificationChannel(
+                    MainActivity.CHANNEL_ID,
+                    MainActivity.CHANNEL_NAME,
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notificaciones de alertas de temperatura crítica para Smart Garden IoT"
+                    enableVibration(true)
+                }
+                manager.createNotificationChannel(channel)
+            }
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun sendTemperatureAlert(context: Context, plantName: String, tempCelsius: Float) {
+        ensureChannel(context)
         // Verificar si el permiso de notificaciones está concedido en Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
@@ -67,6 +85,7 @@ object NotificationHelper {
         moisturePercent: Int,
         minThresholdPercent: Int = 30,
     ) {
+        ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     context,
