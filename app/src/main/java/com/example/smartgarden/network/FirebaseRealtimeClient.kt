@@ -19,7 +19,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 object FirebaseRealtimeClient {
-    private const val FIREBASE_RTDB_URL = "https://smartgarden-web-react-iot-default-rtdb.firebaseio.com/telemetria/actual.json"
+    private const val FIREBASE_BASE_URL = "https://smartgarden-web-react-iot-default-rtdb.firebaseio.com/telemetria"
 
     // Reutilizar conexiones HTTP persistentes para latencia mínima (< 30ms)
     private val client = OkHttpClient.Builder()
@@ -37,11 +37,29 @@ object FirebaseRealtimeClient {
         val humedad: Float,
         val luz: Float,
         val nodo: String = "Módulo IoT #1",
+        val planta: String? = null,
+        val plantId: String? = null,
+        val user: String? = null,
         val timestamp: String
     )
 
+    data class EnqueuedTelemetry(
+        val userKey: String,
+        val payload: TelemetryPayload
+    )
+
+    fun sanitizeUserKey(rawUser: String?): String {
+        val clean = (rawUser ?: "default").trim().lowercase()
+        return clean.replace(Regex("[.#$\\[\\]/]"), "_")
+    }
+
+    fun getTelemetryUrl(rawUser: String?): String {
+        val key = sanitizeUserKey(rawUser)
+        return "$FIREBASE_BASE_URL/$key/actual.json"
+    }
+
     // Flow confluente: descarta automáticamente valores intermedios y siempre procesa el último
-    private val telemetryFlow = MutableSharedFlow<TelemetryPayload>(
+    private val telemetryFlow = MutableSharedFlow<EnqueuedTelemetry>(
         replay = 0,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -51,11 +69,12 @@ object FirebaseRealtimeClient {
 
     init {
         scope.launch {
-            telemetryFlow.collectLatest { payload ->
+            telemetryFlow.collectLatest { item ->
                 try {
-                    val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+                    val url = "$FIREBASE_BASE_URL/${item.userKey}/actual.json"
+                    val body = gson.toJson(item.payload).toRequestBody(jsonMediaType)
                     val request = Request.Builder()
-                        .url(FIREBASE_RTDB_URL)
+                        .url(url)
                         .put(body)
                         .build()
                     client.newCall(request).execute().use { /* cerrar para reutilizar conexión en el pool */ }
@@ -66,14 +85,26 @@ object FirebaseRealtimeClient {
         }
     }
 
-    fun syncTelemetry(temperatura: Float, humedad: Float, luz: Float) {
+    fun syncTelemetry(
+        temperatura: Float,
+        humedad: Float,
+        luz: Float,
+        plantName: String? = null,
+        plantId: String? = null,
+        username: String? = null
+    ) {
         val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
+        val effectiveUser = username ?: TokenManager.getUsername() ?: "default"
+        val userKey = sanitizeUserKey(effectiveUser)
         val payload = TelemetryPayload(
             temperatura = temperatura,
             humedad = humedad,
             luz = luz,
+            planta = plantName,
+            plantId = plantId,
+            user = effectiveUser,
             timestamp = isoDate
         )
-        telemetryFlow.tryEmit(payload)
+        telemetryFlow.tryEmit(EnqueuedTelemetry(userKey, payload))
     }
 }

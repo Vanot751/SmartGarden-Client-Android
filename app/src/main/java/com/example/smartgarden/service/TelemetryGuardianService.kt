@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat
 import com.example.smartgarden.MainActivity
 import com.example.smartgarden.NotificationHelper
 import com.example.smartgarden.R
+import com.example.smartgarden.network.FirebaseRealtimeClient
+import com.example.smartgarden.network.TokenManager
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -118,9 +120,19 @@ class TelemetryGuardianService : Service() {
 
     private fun listenToFirebaseStream() {
         serviceScope.launch {
-            val rtdbUrl = "https://smartgarden-web-react-iot-default-rtdb.firebaseio.com/telemetria/actual.json"
+            TokenManager.init(applicationContext)
 
             while (isActive) {
+                val username = TokenManager.getUsername()
+                if (username.isNullOrBlank()) {
+                    // Si no hay usuario autenticado en la app, esperar a que inicie sesión
+                    delay(3000L)
+                    continue
+                }
+
+                val userKey = FirebaseRealtimeClient.sanitizeUserKey(username)
+                val rtdbUrl = FirebaseRealtimeClient.getTelemetryUrl(userKey)
+
                 try {
                     val request = Request.Builder()
                         .url(rtdbUrl)
@@ -135,6 +147,12 @@ class TelemetryGuardianService : Service() {
 
                         val source = response.body?.source() ?: return@use
                         while (isActive && !source.exhausted()) {
+                            // Si el usuario cerró sesión o cambió de cuenta, romper este stream para reiniciar con el nuevo
+                            val activeUser = TokenManager.getUsername()
+                            if (activeUser != username) {
+                                break
+                            }
+
                             val line = source.readUtf8Line() ?: break
                             if (line.startsWith("data: ")) {
                                 val rawJson = line.removePrefix("data: ").trim()
@@ -159,15 +177,18 @@ class TelemetryGuardianService : Service() {
 
             var temp: Float? = null
             var hum: Float? = null
+            var plantName = "Maceta Inteligente"
 
             if (dataElem.isJsonObject) {
                 val dataObj = dataElem.asJsonObject
                 if (dataObj.has("temperatura")) temp = dataObj.get("temperatura").asFloat
                 if (dataObj.has("humedad")) hum = dataObj.get("humedad").asFloat
                 if (dataObj.has("humedadSuelo")) hum = dataObj.get("humedadSuelo").asFloat
+                if (dataObj.has("planta")) plantName = dataObj.get("planta").asString
             } else if (dataElem.isJsonPrimitive) {
                 if (path == "/temperatura") temp = dataElem.asFloat
                 if (path == "/humedad" || path == "/humedadSuelo") hum = dataElem.asFloat
+                if (path == "/planta") plantName = dataElem.asString
             }
 
             val now = System.currentTimeMillis()
@@ -178,7 +199,7 @@ class TelemetryGuardianService : Service() {
                     lastTempAlertTimestamp = now
                     NotificationHelper.sendTemperatureAlert(
                         context = applicationContext,
-                        plantName = "Maceta Inteligente",
+                        plantName = plantName,
                         tempCelsius = temp
                     )
                 }
@@ -190,7 +211,7 @@ class TelemetryGuardianService : Service() {
                     lastMoistureAlertTimestamp = now
                     NotificationHelper.sendMoistureAlert(
                         context = applicationContext,
-                        plantName = "Maceta Inteligente",
+                        plantName = plantName,
                         moisturePercent = hum.toInt(),
                         minThresholdPercent = 30
                     )
