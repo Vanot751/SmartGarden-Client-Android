@@ -31,6 +31,12 @@ data class CustomPlantProfile(
     val moduleId: Int? = null,
 )
 
+data class PlantActuatorsState(
+    val isWaterPumpOn: Boolean = false,
+    val isNebulizerOn: Boolean = false,
+    val selectedDoseMl: Int = 100,
+)
+
 data class PlantSearchResultItem(
     val apiSpeciesId: String,
     val commonName: String?,
@@ -82,6 +88,7 @@ data class FloraSenseUiState(
     val isNebulizerOn: Boolean = false,
     val selectedDoseMl: Int = 100,
     val isEmergencyStopActive: Boolean = false,
+    val plantActuators: Map<String, PlantActuatorsState> = emptyMap(),
     val statusLogMessage: String = "Listo para sincronizar",
 ) {
     val isCriticalHeat: Boolean get() = temperatureCelsius > 35f
@@ -416,27 +423,71 @@ class FloraSenseViewModel : ViewModel() {
 
     fun setWaterPumpState(enabled: Boolean) {
         if (!_uiState.value.isEmergencyStopActive) {
-            _uiState.update { it.copy(isWaterPumpOn = enabled, statusLogMessage = "Bomba actualizada localmente") }
+            val plantId = _uiState.value.activePlant?.id
+            _uiState.update { state ->
+                val updatedMap = if (plantId != null) {
+                    val prev = state.plantActuators[plantId] ?: PlantActuatorsState()
+                    state.plantActuators + (plantId to prev.copy(isWaterPumpOn = enabled))
+                } else state.plantActuators
+                state.copy(
+                    isWaterPumpOn = enabled,
+                    plantActuators = updatedMap,
+                    statusLogMessage = "Bomba de ${state.activePlant?.apodo ?: "maceta"} actualizada"
+                )
+            }
         }
     }
 
     fun setNebulizerState(enabled: Boolean) {
         if (!_uiState.value.isEmergencyStopActive) {
-            _uiState.update { it.copy(isNebulizerOn = enabled, statusLogMessage = "Nebulizador actualizado localmente") }
+            val plantId = _uiState.value.activePlant?.id
+            _uiState.update { state ->
+                val updatedMap = if (plantId != null) {
+                    val prev = state.plantActuators[plantId] ?: PlantActuatorsState()
+                    state.plantActuators + (plantId to prev.copy(isNebulizerOn = enabled))
+                } else state.plantActuators
+                state.copy(
+                    isNebulizerOn = enabled,
+                    plantActuators = updatedMap,
+                    statusLogMessage = "Nebulizador de ${state.activePlant?.apodo ?: "maceta"} actualizado"
+                )
+            }
         }
     }
 
     fun selectDoseMl(doseMl: Int) {
-        if (!_uiState.value.isEmergencyStopActive) _uiState.update { it.copy(selectedDoseMl = doseMl) }
+        if (!_uiState.value.isEmergencyStopActive) {
+            val plantId = _uiState.value.activePlant?.id
+            _uiState.update { state ->
+                val updatedMap = if (plantId != null) {
+                    val prev = state.plantActuators[plantId] ?: PlantActuatorsState()
+                    state.plantActuators + (plantId to prev.copy(selectedDoseMl = doseMl))
+                } else state.plantActuators
+                state.copy(
+                    selectedDoseMl = doseMl,
+                    plantActuators = updatedMap
+                )
+            }
+        }
     }
 
     fun triggerEmergencyStop() {
-        _uiState.update {
-            it.copy(
-                isEmergencyStopActive = !it.isEmergencyStopActive,
+        _uiState.update { state ->
+            val newEmergencyState = !state.isEmergencyStopActive
+            val updatedMap = if (newEmergencyState) {
+                // Parada de emergencia GLOBAL: apagar actuadores de todas las macetas por seguridad
+                state.plantActuators.mapValues { (_, acts) ->
+                    acts.copy(isWaterPumpOn = false, isNebulizerOn = false)
+                }
+            } else {
+                state.plantActuators
+            }
+            state.copy(
+                isEmergencyStopActive = newEmergencyState,
                 isWaterPumpOn = false,
                 isNebulizerOn = false,
-                statusLogMessage = if (!it.isEmergencyStopActive) "Parada de emergencia local activa" else "Parada de emergencia restablecida",
+                plantActuators = updatedMap,
+                statusLogMessage = if (newEmergencyState) "Parada de emergencia activa en todas las macetas" else "Parada de emergencia restablecida",
             )
         }
     }
@@ -461,9 +512,17 @@ class FloraSenseViewModel : ViewModel() {
     }
 
     fun selectActivePlant(plant: CustomPlantProfile) {
+        val currentActuators = _uiState.value.plantActuators[plant.id] ?: PlantActuatorsState(
+            isWaterPumpOn = false,
+            isNebulizerOn = false,
+            selectedDoseMl = 100
+        )
         _uiState.update {
             it.copy(
                 activePlant = plant,
+                isWaterPumpOn = if (it.isEmergencyStopActive) false else currentActuators.isWaterPumpOn,
+                isNebulizerOn = if (it.isEmergencyStopActive) false else currentActuators.isNebulizerOn,
+                selectedDoseMl = currentActuators.selectedDoseMl,
                 statusLogMessage = "${plant.apodo} seleccionada",
             )
         }
