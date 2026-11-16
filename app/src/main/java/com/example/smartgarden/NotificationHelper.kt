@@ -1,7 +1,9 @@
 package com.example.smartgarden
 
 import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -30,10 +32,21 @@ object NotificationHelper {
         }
 
         val formattedTemp = String.format(java.util.Locale.US, "%.1f", tempCelsius)
+        val tapIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID_TEMP,
+            tapIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
             .setSmallIcon(R.drawable.app_logo)
             .setContentTitle("🔥 Alerta Crítica de Temperatura")
             .setContentText("$plantName alcanzó ${formattedTemp}°C.")
+            .setContentIntent(pendingIntent)
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .bigText("¡Atención! La maceta \"$plantName\" registra ${formattedTemp}°C (> 35°C). Se requiere atención inmediata o activar el sistema de ventilación/nebulización.")
@@ -64,10 +77,21 @@ object NotificationHelper {
             }
         }
 
+        val tapIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID_MOISTURE,
+            tapIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
             .setSmallIcon(R.drawable.app_logo)
             .setContentTitle("💧 Alerta Crítica de Humedad del Suelo")
             .setContentText("$plantName tiene humedad de suelo en $moisturePercent% (mínimo: $minThresholdPercent%).")
+            .setContentIntent(pendingIntent)
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .bigText("¡Atención! La maceta \"$plantName\" tiene humedad de suelo de $moisturePercent% (debajo del mínimo de $minThresholdPercent%). Se recomienda activar la bomba de agua o aplicar una dosis de riego.")

@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.smartgarden.network.TokenManager
 import com.example.smartgarden.network.OfflineCacheManager
+import com.example.smartgarden.service.TelemetryGuardianService
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -129,6 +130,9 @@ class MainActivity : ComponentActivity() {
         // Configuración de notificaciones locales para alertas de temperatura
         createNotificationChannel()
         checkAndRequestNotificationPermission()
+
+        // Iniciar el servicio Guardián de monitoreo 24/7 en segundo plano
+        TelemetryGuardianService.startGuardian(this)
 
         setContent {
             AppNavigation()
