@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartgarden.network.CreateUserPlantRequest
+import com.example.smartgarden.network.FirebaseRealtimeClient
 import com.example.smartgarden.network.LoginRequest
 import com.example.smartgarden.network.OfflineCacheManager
 import com.example.smartgarden.network.PlantSearchDto
@@ -122,7 +123,7 @@ class FloraSenseViewModel : ViewModel() {
         viewModelScope.launch {
             while (true) {
                 if (_uiState.value.isAuthenticated) fetchTelemetryFromDjango()
-                delay(15_000L)
+                delay(3_000L)
             }
         }
     }
@@ -477,7 +478,14 @@ class FloraSenseViewModel : ViewModel() {
         }
         telemetrySubmissionJob?.cancel()
         telemetrySubmissionJob = viewModelScope.launch {
-            delay(400L)
+            // Sincronización instantánea a Firebase Realtime Database (< 50ms)
+            FirebaseRealtimeClient.syncTelemetry(
+                temperatura = temperature,
+                humedad = normalizedMoisture.toFloat(),
+                luz = normalizedSunlight.toFloat()
+            )
+
+            delay(120L)
             val plant = _uiState.value.activePlant
             val moduleId = plant?.moduleId
             if (moduleId == null) {
