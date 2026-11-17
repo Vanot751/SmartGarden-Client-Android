@@ -166,6 +166,7 @@ class FloraSenseViewModel : ViewModel() {
                         },
                     )
                 }
+                fetchRemoteActuators()
             } catch (error: retrofit2.HttpException) {
                 if (error.code() == 401) {
                     handleSessionExpired()
@@ -435,6 +436,7 @@ class FloraSenseViewModel : ViewModel() {
                     statusLogMessage = "Bomba de ${state.activePlant?.apodo ?: "maceta"} actualizada"
                 )
             }
+            syncCurrentActuatorsToFirebase()
         }
     }
 
@@ -452,6 +454,7 @@ class FloraSenseViewModel : ViewModel() {
                     statusLogMessage = "Nebulizador de ${state.activePlant?.apodo ?: "maceta"} actualizado"
                 )
             }
+            syncCurrentActuatorsToFirebase()
         }
     }
 
@@ -468,6 +471,7 @@ class FloraSenseViewModel : ViewModel() {
                     plantActuators = updatedMap
                 )
             }
+            syncCurrentActuatorsToFirebase()
         }
     }
 
@@ -489,6 +493,50 @@ class FloraSenseViewModel : ViewModel() {
                 plantActuators = updatedMap,
                 statusLogMessage = if (newEmergencyState) "Parada de emergencia activa en todas las macetas" else "Parada de emergencia restablecida",
             )
+        }
+        syncCurrentActuatorsToFirebase()
+    }
+
+    private fun syncCurrentActuatorsToFirebase() {
+        val s = _uiState.value
+        val currentUser = s.userEmail.ifBlank { TokenManager.getUsername() }
+        FirebaseRealtimeClient.syncActuators(
+            username = currentUser,
+            isWaterPumpOn = s.isWaterPumpOn,
+            isNebulizerOn = s.isNebulizerOn,
+            doseMl = s.selectedDoseMl,
+            isEmergencyStop = s.isEmergencyStopActive,
+            plantId = s.activePlant?.id,
+            plantName = s.activePlant?.apodo
+        )
+    }
+
+    private fun fetchRemoteActuators() {
+        viewModelScope.launch {
+            val currentUser = _uiState.value.userEmail.ifBlank { TokenManager.getUsername() }
+            val remote = FirebaseRealtimeClient.fetchActuators(currentUser)
+            if (remote != null) {
+                _uiState.update { state ->
+                    val plantId = remote.plantId ?: state.activePlant?.id
+                    val isEStop = remote.paradaEmergencia
+                    val acts = PlantActuatorsState(
+                        isWaterPumpOn = if (isEStop) false else remote.bombaAgua,
+                        isNebulizerOn = if (isEStop) false else remote.nebulizador,
+                        selectedDoseMl = remote.dosisRiegoMl
+                    )
+                    val updatedMap = if (plantId != null) {
+                        state.plantActuators + (plantId to acts)
+                    } else state.plantActuators
+
+                    state.copy(
+                        isEmergencyStopActive = isEStop,
+                        isWaterPumpOn = acts.isWaterPumpOn,
+                        isNebulizerOn = acts.isNebulizerOn,
+                        selectedDoseMl = acts.selectedDoseMl,
+                        plantActuators = updatedMap
+                    )
+                }
+            }
         }
     }
 

@@ -48,6 +48,17 @@ object FirebaseRealtimeClient {
         val payload: TelemetryPayload
     )
 
+    data class ActuatorsPayload(
+        val bombaAgua: Boolean = false,
+        val nebulizador: Boolean = false,
+        val dosisRiegoMl: Int = 100,
+        val paradaEmergencia: Boolean = false,
+        val plantId: String? = null,
+        val plantName: String? = null,
+        val user: String? = null,
+        val updatedAt: String? = null
+    )
+
     fun sanitizeUserKey(rawUser: String?): String {
         val clean = (rawUser ?: "default").trim().lowercase()
         return clean.replace(Regex("[.#$\\[\\]/]"), "_")
@@ -106,5 +117,66 @@ object FirebaseRealtimeClient {
             timestamp = isoDate
         )
         telemetryFlow.tryEmit(EnqueuedTelemetry(userKey, payload))
+    }
+
+    fun syncActuators(
+        username: String?,
+        isWaterPumpOn: Boolean,
+        isNebulizerOn: Boolean,
+        doseMl: Int,
+        isEmergencyStop: Boolean,
+        plantId: String? = null,
+        plantName: String? = null
+    ) {
+        val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
+        val effectiveUser = username ?: TokenManager.getUsername() ?: "default"
+        val userKey = sanitizeUserKey(effectiveUser)
+        val payload = ActuatorsPayload(
+            bombaAgua = if (isEmergencyStop) false else isWaterPumpOn,
+            nebulizador = if (isEmergencyStop) false else isNebulizerOn,
+            dosisRiegoMl = doseMl,
+            paradaEmergencia = isEmergencyStop,
+            plantId = plantId,
+            plantName = plantName,
+            user = effectiveUser,
+            updatedAt = isoDate
+        )
+        scope.launch {
+            try {
+                // 1. /telemetria/<userKey>/actuadores.json (usado por ESP32 y apps)
+                val actUrl = "$FIREBASE_BASE_URL/$userKey/actuadores.json"
+                val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+                val request = Request.Builder().url(actUrl).put(body).build()
+                client.newCall(request).execute().use {}
+
+                // 2. /telemetria/<userKey>/actual/actuadores.json (para el stream de telemetria)
+                val actualUrl = "$FIREBASE_BASE_URL/$userKey/actual/actuadores.json"
+                val actualRequest = Request.Builder().url(actualUrl).put(body).build()
+                client.newCall(actualRequest).execute().use {}
+            } catch (_: Exception) {
+                // Silencioso para modo offline
+            }
+        }
+    }
+
+    suspend fun fetchActuators(username: String?): ActuatorsPayload? {
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            try {
+                val effectiveUser = username ?: TokenManager.getUsername() ?: "default"
+                val userKey = sanitizeUserKey(effectiveUser)
+                val url = "$FIREBASE_BASE_URL/$userKey/actuadores.json"
+                val request = Request.Builder().url(url).get().build()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyString = response.body?.string()
+                        if (!bodyString.isNullOrBlank() && bodyString != "null") {
+                            gson.fromJson(bodyString, ActuatorsPayload::class.java)
+                        } else null
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 }
