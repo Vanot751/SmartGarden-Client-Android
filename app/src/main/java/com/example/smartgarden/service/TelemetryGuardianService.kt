@@ -100,7 +100,7 @@ class TelemetryGuardianService : Service() {
         )
 
         val notification: Notification = NotificationCompat.Builder(this, GUARDIAN_CHANNEL_ID)
-            .setSmallIcon(R.drawable.app_logo)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("SmartGarden: Guardián Activo")
             .setContentText("Monitoreo ambiental 24/7 en segundo plano")
             .setContentIntent(pendingIntent)

@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -60,8 +61,11 @@ object NotificationHelper {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notification_large)
+
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
-            .setSmallIcon(R.drawable.app_logo)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(largeIcon)
             .setContentTitle("🔥 Alerta Crítica de Temperatura")
             .setContentText("$plantName alcanzó ${formattedTemp}°C.")
             .setContentIntent(pendingIntent)
@@ -106,8 +110,11 @@ object NotificationHelper {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val largeIcon = BitmapFactory.decodeResource(context.resources, R.drawable.ic_notification_large)
+
         val builder = NotificationCompat.Builder(context, MainActivity.CHANNEL_ID)
-            .setSmallIcon(R.drawable.app_logo)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(largeIcon)
             .setContentTitle("💧 Alerta Crítica de Humedad del Suelo")
             .setContentText("$plantName tiene humedad de suelo en $moisturePercent% (mínimo: $minThresholdPercent%).")
             .setContentIntent(pendingIntent)
