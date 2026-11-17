@@ -8,6 +8,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -39,9 +42,14 @@ class TelemetryGuardianService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
     private val okHttpClient = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS) // Stream continuo sin timeout
+        .readTimeout(45, TimeUnit.SECONDS) // Latido de salud: auto-reconexión si pasan 45s sin datos
         .connectTimeout(15, TimeUnit.SECONDS)
         .build()
+
+    @Volatile
+    private var activeCall: okhttp3.Call? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private var lastTempAlertTimestamp = 0L
     private var lastMoistureAlertTimestamp = 0L
@@ -70,7 +78,40 @@ class TelemetryGuardianService : Service() {
         super.onCreate()
         createGuardianChannel()
         startInForeground()
+        registerNetworkCallback()
         listenToFirebaseStream()
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.i("TelemetryGuardian", "Red reestablecida/cambiada. Verificando y refrescando stream...")
+                    activeCall?.cancel()
+                }
+
+                override fun onLost(network: Network) {
+                    Log.w("TelemetryGuardian", "Conexión de red perdida. Cancelando stream actual...")
+                    activeCall?.cancel()
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                connectivityManager?.registerDefaultNetworkCallback(networkCallback!!)
+            } else {
+                val builder = NetworkRequest.Builder()
+                connectivityManager?.registerNetworkCallback(builder.build(), networkCallback!!)
+            }
+        } catch (e: Exception) {
+            Log.e("TelemetryGuardian", "No se pudo registrar NetworkCallback: ${e.message}")
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
+            networkCallback = null
+        } catch (_: Exception) {}
     }
 
     private fun createGuardianChannel() {
@@ -141,31 +182,37 @@ class TelemetryGuardianService : Service() {
                         .addHeader("Accept", "text/event-stream")
                         .build()
 
-                    okHttpClient.newCall(request).execute().use { response ->
-                        Log.d("TelemetryGuardian", "Conexión SSE establecida con código HTTP: ${response.code}")
-                        if (!response.isSuccessful) {
-                            Log.w("TelemetryGuardian", "Error en respuesta SSE: ${response.code} ${response.message}")
-                            delay(5000L)
-                            return@use
-                        }
-
-                        val source = response.body?.source() ?: return@use
-                        while (isActive && !source.exhausted()) {
-                            val activeUser = TokenManager.getUsername()
-                            if (activeUser != username) {
-                                Log.i("TelemetryGuardian", "El usuario cambió a '$activeUser'. Reiniciando stream...")
-                                break
+                    val call = okHttpClient.newCall(request)
+                    activeCall = call
+                    try {
+                        call.execute().use { response ->
+                            Log.d("TelemetryGuardian", "Conexión SSE establecida con código HTTP: ${response.code}")
+                            if (!response.isSuccessful) {
+                                Log.w("TelemetryGuardian", "Error en respuesta SSE: ${response.code} ${response.message}")
+                                delay(5000L)
+                                return@use
                             }
 
-                            val line = source.readUtf8Line() ?: break
-                            if (line.startsWith("data: ")) {
-                                val rawJson = line.removePrefix("data: ").trim()
-                                Log.d("TelemetryGuardian", "Línea SSE recibida: $rawJson")
-                                if (rawJson.isNotEmpty() && rawJson != "null") {
-                                    handleFirebasePayload(rawJson)
+                            val source = response.body?.source() ?: return@use
+                            while (isActive && !source.exhausted()) {
+                                val activeUser = TokenManager.getUsername()
+                                if (activeUser != username) {
+                                    Log.i("TelemetryGuardian", "El usuario cambió a '$activeUser'. Reiniciando stream...")
+                                    break
+                                }
+
+                                val line = source.readUtf8Line() ?: break
+                                if (line.startsWith("data: ")) {
+                                    val rawJson = line.removePrefix("data: ").trim()
+                                    Log.d("TelemetryGuardian", "Línea SSE recibida: $rawJson")
+                                    if (rawJson.isNotEmpty() && rawJson != "null") {
+                                        handleFirebasePayload(rawJson)
+                                    }
                                 }
                             }
                         }
+                    } finally {
+                        activeCall = null
                     }
                 } catch (e: Exception) {
                     Log.e("TelemetryGuardian", "Excepción en stream SSE: ${e.message}", e)
@@ -262,6 +309,8 @@ class TelemetryGuardianService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        unregisterNetworkCallback()
+        activeCall?.cancel()
         serviceJob.cancel()
         super.onDestroy()
     }
