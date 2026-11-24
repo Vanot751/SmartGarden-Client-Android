@@ -127,11 +127,12 @@ data class FloraSenseUiState(
     val hardwareMacAddress: String = "24:6F:28:B1:A4:9C",
     val isHardwareConnected: Boolean = true,
 ) {
-    val isCriticalHeat: Boolean get() = temperatureCelsius > 35f
+    val isCriticalHeat: Boolean get() = temperatureCelsius > (activePlant?.tempMax ?: 35f)
+    val isCriticalCold: Boolean get() = activePlant?.let { temperatureCelsius < it.tempMin } ?: (temperatureCelsius < 0f)
     val activeMoistureThreshold: Int
         get() = activePlant?.minMoistureThreshold ?: selectedCategory.minMoistureThreshold
     val isLowMoisture: Boolean get() = soilMoisturePercent < activeMoistureThreshold
-    val hasCriticalAlert: Boolean get() = isCriticalHeat || isLowMoisture || isEmergencyStopActive
+    val hasCriticalAlert: Boolean get() = isCriticalHeat || isCriticalCold || isLowMoisture || isEmergencyStopActive
 }
 
 class FloraSenseViewModel : ViewModel() {

@@ -394,6 +394,7 @@ private fun AlertSummary(uiState: FloraSenseUiState, onOpenControls: () -> Unit)
                     when {
                         uiState.isEmergencyStopActive -> "La parada de emergencia está activa."
                         uiState.isCriticalHeat -> "Temperatura sobre el rango recomendado."
+                        uiState.isCriticalCold -> "Temperatura bajo el mínimo recomendado (riesgo de helada)."
                         else -> "La humedad del suelo está bajo el mínimo."
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -927,7 +928,7 @@ private fun TelemetrySimulator(
             Slider(
                 value = uiState.temperatureCelsius,
                 onValueChange = { onUpdate(it, uiState.soilMoisturePercent, uiState.sunlightPercent) },
-                valueRange = 0f..45f,
+                valueRange = -5f..45f,
             )
             Text("Humedad del suelo: ${uiState.soilMoisturePercent}%", style = MaterialTheme.typography.labelSmall)
             Slider(

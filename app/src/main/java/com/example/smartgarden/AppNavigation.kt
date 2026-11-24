@@ -1,7 +1,11 @@
 package com.example.smartgarden
 
 import android.content.Context
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
@@ -105,9 +109,12 @@ fun AppNavigation(
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route
 
-        val showBottomBar = currentRoute == FloraSenseRoute.DASHBOARD.route ||
+        @OptIn(ExperimentalLayoutApi::class)
+        val isImeVisible = WindowInsets.isImeVisible
+
+        val showBottomBar = (currentRoute == FloraSenseRoute.DASHBOARD.route ||
             currentRoute == FloraSenseRoute.CONTROL_PANEL.route ||
-            currentRoute == FloraSenseRoute.FLORABOT.route
+            currentRoute == FloraSenseRoute.FLORABOT.route) && !isImeVisible
 
         Scaffold(
             modifier = modifier.fillMaxSize(),
@@ -132,7 +139,10 @@ fun AppNavigation(
             NavHost(
                 navController = navController,
                 startDestination = FloraSenseRoute.LOGIN.route,
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
             ) {
                 // Pantalla 1: Autenticación (API Django)
                 composable(route = FloraSenseRoute.LOGIN.route) {
