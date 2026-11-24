@@ -50,6 +50,9 @@ interface SmartGardenApi {
         @Path("id") moduleId: Int,
         @Body request: TelemetryRequest,
     ): TelemetryDto
+
+    @POST("chat/")
+    suspend fun sendChatMessage(@Body request: ChatRequest): ChatResponse
 }
 
 data class LoginRequest(
@@ -167,3 +170,50 @@ data class PlantSearchDto(
     @SerializedName("temp_max") val tempMax: Float? = null,
     @SerializedName("humidity_min") val humidityMin: Float? = null,
 )
+
+// ============================================================================
+// DTOs PARA FLORABOT IA (ASISTENTE BOTÁNICO INTELIGENTE)
+// ============================================================================
+
+data class ChatMessageDto(
+    @SerializedName("role") val role: String,
+    @SerializedName("content") val content: String,
+)
+
+data class PlantContextDto(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("scientific_name") val scientificName: String? = null,
+    @SerializedName("temperature") val temperature: Float? = null,
+    @SerializedName("soil_moisture") val soilMoisture: Int? = null,
+    @SerializedName("humidity") val humidity: Float? = null,
+    @SerializedName("light_lux") val lightLux: Int? = null,
+    @SerializedName("temp_min") val tempMin: Float? = null,
+    @SerializedName("temp_max") val tempMax: Float? = null,
+    @SerializedName("humedad_min") val humedadMin: Int? = null,
+)
+
+data class FleetPlantDto(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("scientific_name") val scientificName: String? = null,
+    @SerializedName("temperature") val temperature: Float? = null,
+    @SerializedName("soil_moisture") val soilMoisture: Int? = null,
+    @SerializedName("light_lux") val lightLux: Int? = null,
+    @SerializedName("temp_min") val tempMin: Float? = null,
+    @SerializedName("temp_max") val tempMax: Float? = null,
+    @SerializedName("humedad_min") val humedadMin: Int? = null,
+    @SerializedName("selected") val selected: Boolean = false,
+)
+
+data class ChatRequest(
+    @SerializedName("message") val message: String,
+    @SerializedName("history") val history: List<ChatMessageDto> = emptyList(),
+    @SerializedName("plant_context") val plantContext: PlantContextDto? = null,
+    @SerializedName("fleet_context") val fleetContext: List<FleetPlantDto>? = null,
+)
+
+data class ChatResponse(
+    @SerializedName("response") val response: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("error") val error: String? = null,
+)
+

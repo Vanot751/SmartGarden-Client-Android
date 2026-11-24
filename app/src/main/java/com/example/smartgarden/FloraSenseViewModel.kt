@@ -12,6 +12,11 @@ import com.example.smartgarden.network.RetrofitClient
 import com.example.smartgarden.network.TelemetryDto
 import com.example.smartgarden.network.TokenManager
 import com.example.smartgarden.network.UserPlantDto
+import com.example.smartgarden.network.ChatMessageDto
+import com.example.smartgarden.network.ChatRequest
+import com.example.smartgarden.network.ChatResponse
+import com.example.smartgarden.network.PlantContextDto
+import com.example.smartgarden.network.FleetPlantDto
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +65,21 @@ enum class PlantCategory(
     AROMATICAS("Aromáticas", "20°C - 30°C", 30),
 }
 
+// ============================================================================
+// MODELOS PARA FLORABOT IA (CHAT BOTÁNICO ASISTIDO POR IA)
+// ============================================================================
+
+enum class ChatSender {
+    USER, BOT
+}
+
+data class ChatMessageItem(
+    val id: String = UUID.randomUUID().toString(),
+    val sender: ChatSender,
+    val message: String,
+    val timestamp: Long = System.currentTimeMillis(),
+)
+
 data class FloraSenseUiState(
     val isAuthenticated: Boolean = false,
     val isAuthenticating: Boolean = false,
@@ -90,6 +110,22 @@ data class FloraSenseUiState(
     val isEmergencyStopActive: Boolean = false,
     val plantActuators: Map<String, PlantActuatorsState> = emptyMap(),
     val statusLogMessage: String = "Listo para sincronizar",
+
+    // FloraBot IA State
+    val chatMessages: List<ChatMessageItem> = listOf(
+        ChatMessageItem(
+            sender = ChatSender.BOT,
+            message = "¡Hola! Soy FloraBot, tu asesor botánico inteligente. Conozco el estado en tiempo real de tus sensores y los requerimientos de tu jardín.\n\n💡 ¿Buscas una planta por su nombre popular? Dime qué especie buscas (por ejemplo: boldo, palto, copihue, maitén, etc.) y te daré su nombre científico exacto y su término en inglés para que la agregues fácilmente al catálogo.\n\n¿En qué te puedo orientar hoy?"
+        )
+    ),
+    val isChatLoading: Boolean = false,
+    val chatError: String? = null,
+
+    // Hardware Wi-Fi (ESP32) vs Modo Calibración
+    val isCalibrationMode: Boolean = false,
+    val hardwareDeviceName: String = "ESP32-SmartGarden",
+    val hardwareMacAddress: String = "24:6F:28:B1:A4:9C",
+    val isHardwareConnected: Boolean = true,
 ) {
     val isCriticalHeat: Boolean get() = temperatureCelsius > 35f
     val activeMoistureThreshold: Int
@@ -854,5 +890,134 @@ class FloraSenseViewModel : ViewModel() {
                 statusLogMessage = "$prefix: ${error.message ?: "error de red"}",
             )
         }
+    }
+
+    // ========================================================================
+    // GESTIÓN DE FLORABOT IA (CONVERSACIÓN & TELEMETRÍA VINCULADA)
+    // ========================================================================
+
+    fun sendChatMessage(userText: String) {
+        val trimmed = userText.trim()
+        if (trimmed.isEmpty() || _uiState.value.isChatLoading) return
+
+        val userMsg = ChatMessageItem(
+            sender = ChatSender.USER,
+            message = trimmed,
+        )
+        _uiState.update { state ->
+            state.copy(
+                chatMessages = state.chatMessages + userMsg,
+                isChatLoading = true,
+                chatError = null,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val state = _uiState.value
+                val active = state.activePlant
+                val plantCtx = if (active != null) {
+                    PlantContextDto(
+                        name = active.apodo,
+                        scientificName = active.commonName.ifBlank { active.apodo },
+                        temperature = state.temperatureCelsius,
+                        soilMoisture = state.soilMoisturePercent,
+                        humidity = 55f,
+                        lightLux = state.sunlightPercent,
+                        tempMin = active.tempMin,
+                        tempMax = active.tempMax,
+                        humedadMin = active.minMoistureThreshold,
+                    )
+                } else null
+
+                val fleetCtx = state.userPlants.map { p ->
+                    FleetPlantDto(
+                        name = p.apodo,
+                        scientificName = p.commonName.ifBlank { p.apodo },
+                        temperature = if (p.id == active?.id) state.temperatureCelsius else 22f,
+                        soilMoisture = if (p.id == active?.id) state.soilMoisturePercent else p.minMoistureThreshold + 10,
+                        lightLux = if (p.id == active?.id) state.sunlightPercent else 70,
+                        tempMin = p.tempMin,
+                        tempMax = p.tempMax,
+                        humedadMin = p.minMoistureThreshold,
+                        selected = (p.id == active?.id),
+                    )
+                }
+
+                val historyDtos = state.chatMessages
+                    .takeLast(6)
+                    .map { msg ->
+                        ChatMessageDto(
+                            role = if (msg.sender == ChatSender.USER) "user" else "assistant",
+                            content = msg.message,
+                        )
+                    }
+
+                val request = ChatRequest(
+                    message = trimmed,
+                    history = historyDtos,
+                    plantContext = plantCtx,
+                    fleetContext = fleetCtx,
+                )
+
+                val response = RetrofitClient.api.sendChatMessage(request)
+                val botText = response.response?.trim()
+                if (!botText.isNullOrEmpty()) {
+                    val botMsg = ChatMessageItem(
+                        sender = ChatSender.BOT,
+                        message = botText,
+                    )
+                    _uiState.update { s ->
+                        s.copy(
+                            chatMessages = s.chatMessages + botMsg,
+                            isChatLoading = false,
+                        )
+                    }
+                } else {
+                    val err = response.error ?: "No se recibió respuesta del asistente botánico."
+                    _uiState.update { s ->
+                        s.copy(
+                            isChatLoading = false,
+                            chatError = err,
+                            chatMessages = s.chatMessages + ChatMessageItem(
+                                sender = ChatSender.BOT,
+                                message = "Disculpa, no pude procesar la consulta agronómica: $err"
+                            ),
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val errMsg = "Error de conexión: ${e.message ?: "Sin respuesta de red"}"
+                _uiState.update { s ->
+                    s.copy(
+                        isChatLoading = false,
+                        chatError = errMsg,
+                        chatMessages = s.chatMessages + ChatMessageItem(
+                            sender = ChatSender.BOT,
+                            message = "No pude conectar con FloraBot en este momento. Revisa tu conexión a internet o intenta nuevamente en unos momentos."
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearChatHistory() {
+        _uiState.update { state ->
+            val activePlantName = state.activePlant?.apodo ?: "tus plantas"
+            state.copy(
+                chatMessages = listOf(
+                    ChatMessageItem(
+                        sender = ChatSender.BOT,
+                        message = "¡Hola de nuevo! Estoy listo para responder tus dudas sobre $activePlantName, diagnosticar el riego o traducir nombres populares a su nombre científico o en inglés. ¿En qué te puedo orientar?"
+                    )
+                ),
+                chatError = null,
+            )
+        }
+    }
+
+    fun toggleCalibrationMode() {
+        _uiState.update { it.copy(isCalibrationMode = !it.isCalibrationMode) }
     }
 }

@@ -5,3 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
 }
+
+val localBuildBase = file("C:/tmp/SmartGarden-build")
+allprojects {
+    layout.buildDirectory.set(File(localBuildBase, project.name))
+}

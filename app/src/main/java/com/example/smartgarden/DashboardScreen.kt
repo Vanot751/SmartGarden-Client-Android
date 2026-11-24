@@ -32,13 +32,16 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,6 +53,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
@@ -84,6 +88,8 @@ fun DashboardScreen(
     onUpdateSimulatedTelemetry: (Float, Int, Int) -> Unit,
     onSimulateSecondDevice: () -> Unit,
     onNavigateToControls: () -> Unit,
+    onNavigateToFloraBot: () -> Unit = {},
+    onAskAiAboutPlant: (PlantSearchResultItem) -> Unit = {},
     onLogout: () -> Unit,
     onToggleDarkMode: () -> Unit,
 ) {
@@ -129,54 +135,26 @@ fun DashboardScreen(
             onSearch = onSearchPlants,
             onAddPlant = onAddPlant,
             onDeletePlant = { plantPendingDelete = it },
+            onNavigateToFloraBot = onNavigateToFloraBot,
+            onAskAiAboutPlant = onAskAiAboutPlant,
         )
 
         SectionTitle(
-            title = "Telemetría",
+            title = "Telemetría en Vivo",
             subtitle = uiState.activePlant?.let {
                 "${it.apodo} • ${it.tempMin}°C - ${it.tempMax}°C • humedad mínima ${it.minMoistureThreshold}%"
             } ?: "Selecciona una maceta para ver sus parámetros",
         )
         TelemetryGrid(uiState = uiState)
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                selected = showSimulator,
-                onClick = { showSimulator = !showSimulator },
-                label = { Text(if (showSimulator) "Ocultar simulador" else "Simular lectura") },
-                leadingIcon = {
-                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = WarmSurfaceContainer,
-                    selectedContainerColor = EmeraldSoftBg,
-                    labelColor = CharcoalText,
-                    selectedLabelColor = CharcoalText,
-                ),
-            )
-            Button(
-                onClick = onNavigateToControls,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = EmeraldActive,
-                    contentColor = CharcoalText,
-                ),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text("Controles", fontWeight = FontWeight.Bold)
-            }
-        }
-
-        AnimatedVisibility(showSimulator) {
-            TelemetrySimulator(
-                uiState = uiState,
-                onUpdate = onUpdateSimulatedTelemetry,
-            )
-        }
+        // Origen de Telemetría: Hardware Wi-Fi (ESP32) con soporte de Calibración
+        HardwareTelemetrySourceCard(
+            uiState = uiState,
+            isCalibrationOpen = showSimulator,
+            onToggleCalibration = { showSimulator = !showSimulator },
+            onUpdateTelemetry = onUpdateSimulatedTelemetry,
+            onNavigateToControls = onNavigateToControls,
+        )
 
         Text(
             text = uiState.statusLogMessage,
@@ -320,7 +298,7 @@ private fun ExpertWebPanelCard() {
                         color = CharcoalText,
                     )
                     Text(
-                        text = "Gemelo Digital 3D y analítica histórica",
+                        text = "Gemelo Digital 3D interactivo y analítica histórica",
                         style = MaterialTheme.typography.bodySmall,
                         color = CharcoalSubtle,
                     )
@@ -332,7 +310,7 @@ private fun ExpertWebPanelCard() {
                     try {
                         val intent = Intent(
                             Intent.ACTION_VIEW,
-                            Uri.parse("https://smart-garden-web-react.vercel.app/")
+                            Uri.parse("https://smart-garden-web-react.vercel.app/dashboard")
                         )
                         context.startActivity(intent)
                     } catch (_: Exception) {}
@@ -434,6 +412,8 @@ private fun PlantFleetSection(
     onSearch: (String) -> Unit,
     onAddPlant: (PlantSearchResultItem) -> Unit,
     onDeletePlant: (CustomPlantProfile) -> Unit,
+    onNavigateToFloraBot: () -> Unit = {},
+    onAskAiAboutPlant: (PlantSearchResultItem) -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionTitle("Mis macetas", "Gestiona las plantas vinculadas a tu cuenta")
@@ -486,6 +466,32 @@ private fun PlantFleetSection(
             }
         }
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "¿Nombre popular? Pídele a FloraBot su nombre científico o en inglés",
+                style = MaterialTheme.typography.labelSmall,
+                color = CharcoalSubtle,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = onNavigateToFloraBot,
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = "Traducir ↗",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EmeraldActive,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+
         OutlinedTextField(
             value = uiState.plantSearchQuery,
             onValueChange = onSearch,
@@ -523,6 +529,7 @@ private fun PlantFleetSection(
                     enabled = uiState.moduleIds.isNotEmpty(),
                     isAdding = uiState.addingPlantId == result.apiSpeciesId,
                     onAdd = { onAddPlant(result) },
+                    onAskAi = { onAskAiAboutPlant(result) },
                 )
             }
         }
@@ -601,30 +608,80 @@ private fun SearchPlantRow(
     enabled: Boolean,
     isAdding: Boolean,
     onAdd: () -> Unit,
+    onAskAi: () -> Unit,
 ) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = WarmSurfaceHigh) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = WarmSurfaceHigh) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(result.commonName ?: result.apiSpeciesId, fontWeight = FontWeight.Bold)
-                result.scientificName?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = CharcoalSubtle) }
-            }
-            Button(
-                onClick = onAdd,
-                enabled = enabled && !isAdding,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldActive, contentColor = CharcoalText),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (isAdding) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = CharcoalText)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(result.commonName ?: result.apiSpeciesId, fontWeight = FontWeight.Bold)
+                    result.scientificName?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = CharcoalSubtle) }
+                }
+            }
+
+            // Atributos botánicos clave del catálogo si están disponibles
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                result.tempMin?.let { minT ->
+                    result.tempMax?.let { maxT ->
+                        Text("🌡️ ${minT.toInt()}°C - ${maxT.toInt()}°C", style = MaterialTheme.typography.labelSmall, color = CharcoalSubtle)
+                    }
+                }
+                result.humidityMin?.let { minH ->
+                    Text("💧 Mín. ${minH.toInt()}%", style = MaterialTheme.typography.labelSmall, color = CharcoalSubtle)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onAskAi,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CharcoalText),
+                    border = BorderStroke(1.dp, EmeraldActive.copy(alpha = 0.6f)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp),
+                        tint = EmeraldActive,
+                    )
                     Spacer(Modifier.width(4.dp))
-                    Text("Agregando...")
-                } else {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text(if (enabled) "Agregar" else "Sin módulo")
+                    Text("Sugerencias IA", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                Button(
+                    onClick = onAdd,
+                    enabled = enabled && !isAdding,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldActive, contentColor = CharcoalText),
+                ) {
+                    if (isAdding) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = CharcoalText)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Agregando...", style = MaterialTheme.typography.labelSmall)
+                    } else {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text(if (enabled) "Agregar" else "Sin módulo", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -680,15 +737,189 @@ private fun TelemetryCard(
 }
 
 @Composable
+private fun HardwareTelemetrySourceCard(
+    uiState: FloraSenseUiState,
+    isCalibrationOpen: Boolean,
+    onToggleCalibration: () -> Unit,
+    onUpdateTelemetry: (Float, Int, Int) -> Unit,
+    onNavigateToControls: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = WarmSurfaceContainer),
+        border = BorderStroke(1.dp, CharcoalText.copy(alpha = 0.08f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(38.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = EmeraldSoftBg,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = null,
+                            tint = EmeraldActive,
+                            modifier = Modifier.padding(9.dp),
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Hardware Wi-Fi (ESP32)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = CharcoalText,
+                        )
+                        Text(
+                            text = if (uiState.isRealtimeConnected) "Conectado vía Wi-Fi al servidor" else "Esperando conexión Wi-Fi",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (uiState.isRealtimeConnected) EmeraldActive else CharcoalSubtle,
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (uiState.isRealtimeConnected) EmeraldSoftBg else WarmSurfaceHigh,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(6.dp),
+                            shape = CircleShape,
+                            color = if (uiState.isRealtimeConnected) EmeraldActive else CharcoalSubtle,
+                        ) {}
+                        Text(
+                            text = if (uiState.isRealtimeConnected) "En Línea" else "En Espera",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (uiState.isRealtimeConnected) EmeraldActive else CharcoalSubtle,
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = PearlWarmBackground,
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "Dispositivo físico:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CharcoalSubtle,
+                        )
+                        Text(
+                            text = uiState.hardwareDeviceName,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = CharcoalText,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "Dirección de hardware:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CharcoalSubtle,
+                        )
+                        Text(
+                            text = uiState.hardwareMacAddress,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = CharcoalText,
+                        )
+                    }
+                    Text(
+                        text = "Los datos provienen de los sensores físicos al conectarse vía Wi-Fi.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CharcoalSubtle,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = isCalibrationOpen,
+                    onClick = onToggleCalibration,
+                    label = { Text(if (isCalibrationOpen) "Cerrar calibración" else "Modo Calibración") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = PearlWarmBackground,
+                        selectedContainerColor = EmeraldSoftBg,
+                        labelColor = CharcoalText,
+                        selectedLabelColor = CharcoalText,
+                    ),
+                )
+
+                Button(
+                    onClick = onNavigateToControls,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = EmeraldActive,
+                        contentColor = CharcoalText,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("Actuadores", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            AnimatedVisibility(isCalibrationOpen) {
+                TelemetrySimulator(
+                    uiState = uiState,
+                    onUpdate = onUpdateTelemetry,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TelemetrySimulator(
     uiState: FloraSenseUiState,
     onUpdate: (Float, Int, Int) -> Unit,
 ) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = WarmSurfaceContainer) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = PearlWarmBackground) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("Simulación local", fontWeight = FontWeight.Bold)
+            Text("Modo Calibración y Pruebas", fontWeight = FontWeight.Bold)
             Text(
-                "Los cambios se guardan en la API para ${uiState.activePlant?.apodo ?: "la maceta seleccionada"}.",
+                "Herramienta preliminar: Permite calibrar umbrales y verificar alertas antes del montaje definitivo de la placa física. Se sustituye automáticamente al recibir telemetría de la ESP32.",
                 style = MaterialTheme.typography.bodySmall,
                 color = CharcoalSubtle,
             )
@@ -698,10 +929,16 @@ private fun TelemetrySimulator(
                 onValueChange = { onUpdate(it, uiState.soilMoisturePercent, uiState.sunlightPercent) },
                 valueRange = 0f..45f,
             )
-            Text("Humedad: ${uiState.soilMoisturePercent}%", style = MaterialTheme.typography.labelSmall)
+            Text("Humedad del suelo: ${uiState.soilMoisturePercent}%", style = MaterialTheme.typography.labelSmall)
             Slider(
                 value = uiState.soilMoisturePercent.toFloat(),
                 onValueChange = { onUpdate(uiState.temperatureCelsius, it.toInt(), uiState.sunlightPercent) },
+                valueRange = 0f..100f,
+            )
+            Text("Radiación solar: ${uiState.sunlightPercent}%", style = MaterialTheme.typography.labelSmall)
+            Slider(
+                value = uiState.sunlightPercent.toFloat(),
+                onValueChange = { onUpdate(uiState.temperatureCelsius, uiState.soilMoisturePercent, it.toInt()) },
                 valueRange = 0f..100f,
             )
         }

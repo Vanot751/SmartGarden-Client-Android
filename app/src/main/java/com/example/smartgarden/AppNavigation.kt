@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -36,6 +37,7 @@ enum class FloraSenseRoute(val route: String, val label: String) {
     LOGIN("login", "Acceso Seguro"),
     DASHBOARD("dashboard", "Telemetría"),
     CONTROL_PANEL("control_panel", "Actuadores"),
+    FLORABOT("florabot", "FloraBot IA"),
 }
 
 /**
@@ -104,7 +106,8 @@ fun AppNavigation(
         val currentRoute = navBackStackEntry?.destination?.route
 
         val showBottomBar = currentRoute == FloraSenseRoute.DASHBOARD.route ||
-            currentRoute == FloraSenseRoute.CONTROL_PANEL.route
+            currentRoute == FloraSenseRoute.CONTROL_PANEL.route ||
+            currentRoute == FloraSenseRoute.FLORABOT.route
 
         Scaffold(
             modifier = modifier.fillMaxSize(),
@@ -188,6 +191,28 @@ fun AppNavigation(
                                 restoreState = true
                             }
                         },
+                        onNavigateToFloraBot = {
+                            navController.navigate(FloraSenseRoute.FLORABOT.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        onAskAiAboutPlant = { plantItem ->
+                            val plantName = plantItem.commonName ?: plantItem.scientificName ?: plantItem.apiSpeciesId
+                            val sciName = plantItem.scientificName?.let { " ($it)" } ?: ""
+                            val query = "¿Cuáles son las condiciones óptimas, necesidades de riego y recomendaciones agronómicas para $plantName$sciName?"
+                            viewModel.sendChatMessage(query)
+                            navController.navigate(FloraSenseRoute.FLORABOT.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         onLogout = {
                             viewModel.logout {
                                 navController.navigate(FloraSenseRoute.LOGIN.route) {
@@ -219,6 +244,15 @@ fun AppNavigation(
                             }
                         },
                         onToggleDarkMode = { viewModel.toggleDarkMode(context) },
+                    )
+                }
+
+                // Pantalla 4: Asistente Botánico Inteligente (FloraBot IA)
+                composable(route = FloraSenseRoute.FLORABOT.route) {
+                    FloraBotScreen(
+                        uiState = uiState,
+                        onSendMessage = viewModel::sendChatMessage,
+                        onClearHistory = viewModel::clearChatHistory,
                     )
                 }
             }
@@ -275,8 +309,36 @@ private fun FloraSenseBottomBar(
             },
             label = {
                 Text(
-                    text = "Controles Manuales",
+                    text = "Controles",
                     fontWeight = if (currentRoute == FloraSenseRoute.CONTROL_PANEL.route) {
+                        FontWeight.Bold
+                    } else {
+                        FontWeight.Medium
+                    },
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = CharcoalText,
+                selectedTextColor = CharcoalText,
+                indicatorColor = EmeraldActive,
+                unselectedIconColor = CharcoalSubtle,
+                unselectedTextColor = CharcoalSubtle,
+            ),
+        )
+
+        NavigationBarItem(
+            selected = currentRoute == FloraSenseRoute.FLORABOT.route,
+            onClick = { onNavigate(FloraSenseRoute.FLORABOT.route) },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Spa,
+                    contentDescription = FloraSenseRoute.FLORABOT.label,
+                )
+            },
+            label = {
+                Text(
+                    text = "FloraBot IA",
+                    fontWeight = if (currentRoute == FloraSenseRoute.FLORABOT.route) {
                         FontWeight.Bold
                     } else {
                         FontWeight.Medium
