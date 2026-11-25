@@ -313,16 +313,17 @@ class FloraSenseViewModel : ViewModel() {
                 val response = RetrofitClient.api.login(LoginRequest(cleanUsername, password))
                 val accessToken = response.access ?: response.token
                     ?: error("El servidor no devolvió un token de acceso.")
+                val resolvedUsername = response.username?.takeIf { it.isNotBlank() } ?: cleanUsername
                 TokenManager.saveSession(
                     accessToken = accessToken,
                     refreshToken = response.refresh,
-                    username = cleanUsername
+                    username = resolvedUsername
                 )
                 _uiState.update {
                     it.copy(
                         isAuthenticated = true,
                         isAuthenticating = false,
-                        userEmail = cleanUsername,
+                        userEmail = resolvedUsername,
                         statusLogMessage = "Sesión conectada con Django",
                     )
                 }

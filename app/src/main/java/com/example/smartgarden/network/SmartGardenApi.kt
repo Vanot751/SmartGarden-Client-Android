@@ -80,6 +80,7 @@ data class LoginResponse(
     @SerializedName("access") val access: String? = null,
     @SerializedName("refresh") val refresh: String? = null,
     @SerializedName("token") val token: String? = null,
+    @SerializedName("username") val username: String? = null,
 )
 
 data class PageResponse<T>(
